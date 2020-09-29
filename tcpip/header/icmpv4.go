@@ -17,8 +17,8 @@ package header
 import (
 	"encoding/binary"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
 )
 
 // ICMPv4 represents an ICMPv4 header stored in a byte array.
@@ -56,17 +56,17 @@ type ICMPv4Type byte
 
 // Typical values of ICMPv4Type defined in RFC 792.
 const (
-	ICMPv4EchoReply      ICMPv4Type = 0
-	ICMPv4DstUnreachable ICMPv4Type = 3
-	ICMPv4SrcQuench      ICMPv4Type = 4
-	ICMPv4Redirect       ICMPv4Type = 5
-	ICMPv4Echo           ICMPv4Type = 8
-	ICMPv4TimeExceeded   ICMPv4Type = 11
-	ICMPv4ParamProblem   ICMPv4Type = 12
-	ICMPv4Timestamp      ICMPv4Type = 13
-	ICMPv4TimestampReply ICMPv4Type = 14
-	ICMPv4InfoRequest    ICMPv4Type = 15
-	ICMPv4InfoReply      ICMPv4Type = 16
+	ICMPv4EchoReply      ICMPv4Type = 0		// 响应应答(ping)
+	ICMPv4DstUnreachable ICMPv4Type = 3		// 目标不可达
+	ICMPv4SrcQuench      ICMPv4Type = 4		// 源抑制
+	ICMPv4Redirect       ICMPv4Type = 5		// 重定向
+	ICMPv4Echo           ICMPv4Type = 8		// 响应请求(ping)
+	ICMPv4TimeExceeded   ICMPv4Type = 11	// 超时
+	ICMPv4ParamProblem   ICMPv4Type = 12	// 参数错误
+	ICMPv4Timestamp      ICMPv4Type = 13	// 时间戳请求
+	ICMPv4TimestampReply ICMPv4Type = 14 	// 时间戳应答
+	ICMPv4InfoRequest    ICMPv4Type = 15    // 信息请求
+	ICMPv4InfoReply      ICMPv4Type = 16 	// 信息应答
 )
 
 // Values for ICMP code as defined in RFC 792.

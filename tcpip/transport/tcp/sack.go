@@ -15,8 +15,8 @@
 package tcp
 
 import (
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
 )
 
 const (
@@ -43,8 +43,10 @@ func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value
 		sack.NumBlocks = 1
 		return
 	}
+
 	var n = 0
 	for i := 0; i < sack.NumBlocks; i++ {
+
 		start, end := sack.Blocks[i].Start, sack.Blocks[i].End
 		if end.LessThanEq(rcvNxt) {
 			// Discard any sack blocks that are before rcvNxt as

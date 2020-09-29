@@ -17,11 +17,11 @@ package tcp
 import (
 	"sync"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // Forwarder is a connection request forwarder, which allows clients to decide

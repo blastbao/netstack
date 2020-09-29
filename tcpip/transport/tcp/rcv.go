@@ -18,9 +18,9 @@ import (
 	"container/heap"
 	"time"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
 )
 
 // receiver holds the state necessary to receive TCP segments and turn them
@@ -41,8 +41,9 @@ type receiver struct {
 	rcvAcc seqnum.Value
 
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
+	// 当前的本端接收窗口大小
 	rcvWnd seqnum.Size
-
+	// 本端接收窗口扩大因子，大小是 8 bit，所以其值最大为 255 。
 	rcvWndScale uint8
 
 	closed bool

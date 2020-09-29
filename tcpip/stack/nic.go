@@ -19,17 +19,20 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
 )
 
-// NIC represents a "network interface card" to which the networking stack is
-// attached.
+// NIC represents a "network interface card" to which the networking stack is attached.
 type NIC struct {
+	// 协议栈
 	stack    *Stack
+	// 网卡ID
 	id       tcpip.NICID
+	// 网卡名称
 	name     string
+	//
 	linkEP   LinkEndpoint
 	loopback bool
 
@@ -1035,17 +1038,18 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 	}
 }
 
+//
 type referencedNetworkEndpoint struct {
 	ep       NetworkEndpoint
 	nic      *NIC
 	protocol tcpip.NetworkProtocolNumber
 
-	// linkCache is set if link address resolution is enabled for this
-	// protocol. Set to nil otherwise.
+	// linkCache is set if link address resolution is enabled for this protocol.
+	// Set to nil otherwise.
 	linkCache LinkAddressCache
 
-	// refs is counting references held for this endpoint. When refs hits zero it
-	// triggers the automatic removal of the endpoint from the NIC.
+	// refs is counting references held for this endpoint.
+	// When refs hits zero it triggers the automatic removal of the endpoint from the NIC.
 	refs int32
 
 	// networkEndpointKind must only be accessed using {get,set}Kind().

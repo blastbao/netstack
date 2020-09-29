@@ -17,8 +17,8 @@ package tcpconntrack_test
 import (
 	"testing"
 
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/transport/tcpconntrack"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/transport/tcpconntrack"
 )
 
 // connected creates a connection tracker TCB and sets it to a connected state

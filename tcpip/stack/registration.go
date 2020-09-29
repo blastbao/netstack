@@ -15,10 +15,10 @@
 package stack
 
 import (
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // NetworkEndpointID is the identifier of a network layer protocol endpoint.
@@ -30,20 +30,25 @@ type NetworkEndpointID struct {
 
 // TransportEndpointID is the identifier of a transport layer protocol endpoint.
 //
+// TransportEndpointID 是传输层协议端点的标识符 。
+//
 // +stateify savable
 type TransportEndpointID struct {
+
 	// LocalPort is the local port associated with the endpoint.
+	// LocalPort 是与端点相关联的本地端口。
 	LocalPort uint16
 
-	// LocalAddress is the local [network layer] address associated with
-	// the endpoint.
+	// LocalAddress is the local [network layer] address associated with the endpoint.
+	// LocalAddress 是与端点相关联的本地[网络层]地址。
 	LocalAddress tcpip.Address
 
 	// RemotePort is the remote port associated with the endpoint.
+	// RemotePort 是与端点相关联的远程端口。
 	RemotePort uint16
 
-	// RemoteAddress it the remote [network layer] address associated with
-	// the endpoint.
+	// RemoteAddress is the remote [network layer] address associated with the endpoint.
+	// RemoteAddress 是与端点相关联的远程[网络层]地址。
 	RemoteAddress tcpip.Address
 }
 
@@ -188,8 +193,7 @@ type TransportDispatcher interface {
 type PacketLooping byte
 
 const (
-	// PacketOut indicates that the packet should be passed to the link
-	// endpoint.
+	// PacketOut indicates that the packet should be passed to the link endpoint.
 	PacketOut PacketLooping = 1 << iota
 
 	// PacketLoop indicates that the packet should be handled locally.
@@ -336,20 +340,24 @@ const (
 	CapabilitySoftwareGSO
 )
 
+
+
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
 // ethernet, loopback, raw) and used by network layer protocols to send packets
-// out through the implementer's data link endpoint. When a link header exists,
-// it sets each tcpip.PacketBuffer's LinkHeader field before passing it up the
-// stack.
+// out through the implementer's data link endpoint.
+//
+// When a link header exists, it sets each tcpip.PacketBuffer's LinkHeader field
+// before passing it up the stack.
+//
 type LinkEndpoint interface {
+
 	// MTU is the maximum transmission unit for this endpoint. This is
 	// usually dictated by the backing physical network; when such a
 	// physical network doesn't exist, the limit is generally 64k, which
 	// includes the maximum size of an IP packet.
 	MTU() uint32
 
-	// Capabilities returns the set of capabilities supported by the
-	// endpoint.
+	// Capabilities returns the set of capabilities supported by the endpoint.
 	Capabilities() LinkEndpointCapabilities
 
 	// MaxHeaderLength returns the maximum size the data link (and
@@ -358,8 +366,7 @@ type LinkEndpoint interface {
 	// building.
 	MaxHeaderLength() uint16
 
-	// LinkAddress returns the link address (typically a MAC) of the
-	// link endpoint.
+	// LinkAddress returns the link address (typically a MAC) of the link endpoint.
 	LinkAddress() tcpip.LinkAddress
 
 	// WritePacket writes a packet with the given protocol through the
@@ -402,9 +409,11 @@ type LinkEndpoint interface {
 	Wait()
 }
 
+
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
 // delivered via the Inject method.
 type InjectableLinkEndpoint interface {
+
 	LinkEndpoint
 
 	// InjectInbound injects an inbound packet.

@@ -62,17 +62,23 @@ type VectorisedView struct {
 // NewVectorisedView creates a new vectorised view from an already-allocated slice
 // of View and sets its size.
 func NewVectorisedView(size int, views []View) VectorisedView {
-	return VectorisedView{views: views, size: size}
+	return VectorisedView{
+		views: views,
+		size: size,
+	}
 }
 
 // TrimFront removes the first "count" bytes of the vectorised view.
 func (vv *VectorisedView) TrimFront(count int) {
+
 	for count > 0 && len(vv.views) > 0 {
+
 		if count < len(vv.views[0]) {
 			vv.size -= count
 			vv.views[0].TrimFront(count)
 			return
 		}
+
 		count -= len(vv.views[0])
 		vv.RemoveFirst()
 	}
@@ -105,8 +111,14 @@ func (vv *VectorisedView) CapLength(length int) {
 // Clone returns a clone of this VectorisedView.
 // If the buffer argument is large enough to contain all the Views of this VectorisedView,
 // the method will avoid allocations and use the buffer to store the Views of the clone.
+//
+// 如果 buffer 足够大，可以容纳 vv VectorisedView 下的所有 View ，那么可以避免 append() 过程中的内存分配。
+// 如果 buffer 为 nil，则会自动创建 []View 以存储 vv.views 。
 func (vv VectorisedView) Clone(buffer []View) VectorisedView {
-	return VectorisedView{views: append(buffer[:0], vv.views...), size: vv.size}
+	return VectorisedView{
+		views: append(buffer[:0], vv.views...),
+		size: vv.size,
+	}
 }
 
 // First returns the first view of the vectorised view.

@@ -15,46 +15,63 @@
 package stack
 
 import (
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
 )
 
 // Route represents a route through the networking stack to a given destination.
+// Route 表示通过网络栈到达目的地的路由信息。
 type Route struct {
+
 	// RemoteAddress is the final destination of the route.
+	// RemoteAddress 是路由最终目的地的网络层（IP）地址。
 	RemoteAddress tcpip.Address
 
-	// RemoteLinkAddress is the link-layer (MAC) address of the
-	// final destination of the route.
+	// RemoteLinkAddress is the link-layer (MAC) address of the final destination of the route.
+	// RemoteLinkAddress 是路由最终目的地的链路层（MAC）地址。
 	RemoteLinkAddress tcpip.LinkAddress
 
 	// LocalAddress is the local address where the route starts.
+	// LocalAddress 是指本地网络层（IP）地址。
 	LocalAddress tcpip.Address
 
-	// LocalLinkAddress is the link-layer (MAC) address of the
-	// where the route starts.
+	// LocalLinkAddress is the link-layer (MAC) address of the where the route starts.
+	// LocalLinkAddress 是指本地链路层（MAC）地址。
 	LocalLinkAddress tcpip.LinkAddress
 
 	// NextHop is the next node in the path to the destination.
+	// NextHop 是通往目的地的路径中的下一个节点。
 	NextHop tcpip.Address
 
 	// NetProto is the network-layer protocol.
+	// NetProto 是指网络层协议。
 	NetProto tcpip.NetworkProtocolNumber
 
-	// ref a reference to the network endpoint through which the route
-	// starts.
+	// ref a reference to the network endpoint through which the route starts.
+	// ref 引用本地端点。
 	ref *referencedNetworkEndpoint
 
 	// Loop controls where WritePacket should send packets.
+	// Loop 控制 WritePacket 应该在哪里发送数据包。
 	Loop PacketLooping
+
 }
 
 // makeRoute initializes a new route. It takes ownership of the provided
 // reference to a network endpoint.
-func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip.Address, localLinkAddr tcpip.LinkAddress, ref *referencedNetworkEndpoint, handleLocal, multicastLoop bool) Route {
+func makeRoute(
+	netProto tcpip.NetworkProtocolNumber,
+	localAddr, remoteAddr tcpip.Address,
+	localLinkAddr tcpip.LinkAddress,
+	ref *referencedNetworkEndpoint,
+	handleLocal, multicastLoop bool,
+) Route {
+
 	loop := PacketOut
+
+	// 回环处理
 	if handleLocal && localAddr != "" && remoteAddr == localAddr {
 		loop = PacketLoop
 	} else if multicastLoop && (header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)) {
@@ -64,12 +81,12 @@ func makeRoute(netProto tcpip.NetworkProtocolNumber, localAddr, remoteAddr tcpip
 	}
 
 	return Route{
-		NetProto:         netProto,
-		LocalAddress:     localAddr,
-		LocalLinkAddress: localLinkAddr,
-		RemoteAddress:    remoteAddr,
-		ref:              ref,
-		Loop:             loop,
+		NetProto:         netProto,			// 网络协议
+		LocalAddress:     localAddr,		// 本地 ip 地址
+		LocalLinkAddress: localLinkAddr,	// 本地 mac 地址
+		RemoteAddress:    remoteAddr,		// 远端 ip 地址
+		ref:              ref,				//
+		Loop:             loop,				//
 	}
 }
 
@@ -149,6 +166,8 @@ func (r *Route) RemoveWaker(waker *sleep.Waker) {
 
 // IsResolutionRequired returns true if Resolve() must be called to resolve
 // the link address before the this route can be written to.
+//
+// 如果必须调用 Resolve() 来解析链路层地址，IsResolutionRequired 返回 true 。
 func (r *Route) IsResolutionRequired() bool {
 	return r.ref.isValidForOutgoing() && r.ref.linkCache != nil && r.RemoteLinkAddress == ""
 }
@@ -234,6 +253,7 @@ func (r *Route) MTU() uint32 {
 }
 
 // Release frees all resources associated with the route.
+// 释放
 func (r *Route) Release() {
 	if r.ref != nil {
 		r.ref.decRef()
@@ -243,6 +263,7 @@ func (r *Route) Release() {
 
 // Clone Clone a route such that the original one can be released and the new
 // one will remain valid.
+// 拷贝
 func (r *Route) Clone() Route {
 	r.ref.incRef()
 	return *r

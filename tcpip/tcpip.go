@@ -39,9 +39,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/iptables"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/iptables"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // Error represents an error in the netstack error space. Using a special type
@@ -130,8 +130,8 @@ func (e ErrSaveRejection) Error() string {
 
 // A Clock provides the current time.
 //
-// Times returned by a Clock should always be used for application-visible
-// time. Only monotonic times should be used for netstack internal timekeeping.
+// Times returned by a Clock should always be used for application-visible time.
+// Only monotonic times should be used for netstack internal timekeeping.
 type Clock interface {
 	// NowNanoseconds returns the current real time as a number of
 	// nanoseconds since the Unix epoch.
@@ -163,21 +163,24 @@ func (m AddressMask) Prefix() int {
 }
 
 // Subnet is a subnet defined by its address and mask.
-type Subnet struct {
-	address Address
-	mask    AddressMask
+type Subnet struct {	// 子网
+	address Address		// 地址
+	mask    AddressMask	// 掩码
 }
 
 // NewSubnet creates a new Subnet, checking that the address and mask are the same length.
 func NewSubnet(a Address, m AddressMask) (Subnet, error) {
+
 	if len(a) != len(m) {
 		return Subnet{}, errSubnetLengthMismatch
 	}
+
 	for i := 0; i < len(a); i++ {
 		if a[i]&^m[i] != 0 {
 			return Subnet{}, errSubnetAddressMasked
 		}
 	}
+
 	return Subnet{a, m}, nil
 }
 
@@ -238,6 +241,8 @@ func (s Subnet) Equal(o Subnet) bool {
 	return s == o
 }
 
+
+
 // NICID is a number that uniquely identifies a NIC.
 type NICID int32
 
@@ -257,6 +262,7 @@ const (
 //
 // +stateify savable
 type FullAddress struct {
+
 	// NIC is the ID of the NIC this address refers to.
 	//
 	// This may not be used by all endpoint types.
@@ -276,6 +282,7 @@ type FullAddress struct {
 // This interface allows the endpoint to request the amount of data it needs
 // based on internal buffers without exposing them.
 type Payloader interface {
+
 	// FullPayload returns all available bytes.
 	FullPayload() ([]byte, *Error)
 
@@ -323,6 +330,7 @@ type ControlMessages struct {
 // that exposes functionality like read, write, connect, etc. to users of the
 // networking stack.
 type Endpoint interface {
+
 	// Close puts the endpoint in a closed state and frees all resources
 	// associated with it.
 	Close()
@@ -353,10 +361,12 @@ type Endpoint interface {
 	// not). The channel is only non-nil in this case.
 	Write(Payloader, WriteOptions) (int64, <-chan struct{}, *Error)
 
+
 	// Peek reads data without consuming it from the endpoint.
 	//
 	// This method does not block if there is no data pending.
 	Peek([][]byte) (int64, ControlMessages, *Error)
+
 
 	// Connect connects the endpoint to its peer. Specifying a NIC is
 	// optional.
@@ -460,46 +470,79 @@ type EndpointStats interface {
 
 // WriteOptions contains options for Endpoint.Write.
 type WriteOptions struct {
-	// If To is not nil, write to the given address instead of the endpoint's
-	// peer.
+
+
+	// If To is not nil, write to the given address instead of the endpoint's peer.
+	// 如果 To 不是 nil ，则写到给定的地址而不是 endpoint 的 peer 。
 	To *FullAddress
 
+
 	// More has the same semantics as Linux's MSG_MORE.
+	// More 与 Linux 的 MSG_MORE 具有相同的语义。
 	More bool
 
+
 	// EndOfRecord has the same semantics as Linux's MSG_EOR.
+	// EndOfRecord 的语义与 Linux 的 MSG_EOR 相同。
 	EndOfRecord bool
+
 
 	// Atomic means that all data fetched from Payloader must be written to the
 	// endpoint. If Atomic is false, then data fetched from the Payloader may be
 	// discarded if available endpoint buffer space is unsufficient.
+	//
+	// 如果 Atomic 为 true ，意味着从 Payloader 获取的所有数据必须写入端点。
+	// 如果 Atomic 为 false ，那么如果可用的端点写缓冲空间不足，从 Payloader 获取的数据可能会被丢弃。
 	Atomic bool
 }
 
 // SockOpt represents socket options which values have the int type.
 type SockOpt int
 
+
 const (
+
 	// ReceiveQueueSizeOption is used in GetSockOptInt to specify that the
 	// number of unread bytes in the input buffer should be returned.
+	//
+	// ReceiveQueueSizeOption 在 GetSockOptInt 中用于指定应该返回输入缓冲区中的未读字节数。
+	//
 	ReceiveQueueSizeOption SockOpt = iota
+
 
 	// SendBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
 	// specify the send buffer size option.
+	//
+	// SendBufferSizeOption 被 SetSockOptInt/GetSockOptInt 用来指定发送缓冲区大小。
+	//
 	SendBufferSizeOption
+
 
 	// ReceiveBufferSizeOption is used by SetSockOptInt/GetSockOptInt to
 	// specify the receive buffer size option.
+	//
+	// ReceiveBufferSizeOption 被 SetSockOptInt/GetSockOptInt 用来指定接收缓冲区大小。
+	//
 	ReceiveBufferSizeOption
+
 
 	// SendQueueSizeOption is used in GetSockOptInt to specify that the
 	// number of unread bytes in the output buffer should be returned.
+	//
+	// SendQueueSizeOption 在 GetSockOptInt 中用于指定应返回输出缓冲区中的未读字节数。
+	//
 	SendQueueSizeOption
+
 
 	// DelayOption is used by SetSockOpt/GetSockOpt to specify if data
 	// should be sent out immediately by the transport protocol. For TCP,
 	// it determines if the Nagle algorithm is on or off.
+	//
+	// DelayOption 被 SetSockOpt/GetSockOpt 用来指定数据是否应该由传输层协议立即发送。
+	// 对于 TCP 来说，它决定了 Nagle 算法是开启还是关闭。
+	//
 	DelayOption
+
 
 	// TODO(b/137664753): convert all int socket options to be handled via
 	// GetSockOptInt.
@@ -538,12 +581,16 @@ type QuickAckOption int
 // Only supported on Unix sockets.
 type PasscredOption int
 
+
+
 // TCPInfoOption is used by GetSockOpt to expose TCP statistics.
+//
+// TCPInfoOption 被 GetSockOpt 用来导出 TCP 统计数据。
 //
 // TODO(b/64800844): Add and populate stat fields.
 type TCPInfoOption struct {
-	RTT    time.Duration
-	RTTVar time.Duration
+	RTT    time.Duration	// 往返延迟
+	RTTVar time.Duration    //
 }
 
 // KeepaliveEnabledOption is used by SetSockOpt/GetSockOpt to specify whether
@@ -649,10 +696,16 @@ type IPv4TOSOption uint8
 // for all subsequent outgoing IPv6 packets from the endpoint.
 type IPv6TrafficClassOption uint8
 
+
+
+
+
+
 // Route is a row in the routing table. It specifies through which NIC (and
 // gateway) sets of packets should be routed. A row is considered viable if the
 // masked target address matches the destination address in the row.
 type Route struct {
+
 	// Destination must contain the target address for this row to be viable.
 	Destination Subnet
 
@@ -661,6 +714,7 @@ type Route struct {
 
 	// NIC is the id of the nic to be used if this row is viable.
 	NIC NICID
+
 }
 
 // String implements the fmt.Stringer interface.
@@ -933,6 +987,8 @@ type TCPStats struct {
 
 	// FailedConnectionAttempts is the number of calls to Connect or Listen
 	// (active and passive openings, respectively) that end in an error.
+	//
+	// FailedConnectionAttempts 指以错误告终的 Connect 或 Listen（分为主动和被动）的次数。
 	FailedConnectionAttempts *StatCounter
 
 	// ValidSegmentsReceived is the number of TCP segments received that

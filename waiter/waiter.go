@@ -92,6 +92,7 @@ func (e EventMask) ToLinux() uint32 {
 // Waitable contains the methods that need to be implemented by waitable
 // objects.
 type Waitable interface {
+
 	// Readiness returns what the object is currently ready for. If it's
 	// not ready for a desired purpose, the caller may use EventRegister and
 	// EventUnregister to get notifications once the object becomes ready.
@@ -160,11 +161,15 @@ func (*channelCallback) Callback(e *Entry) {
 // If a channel isn't specified (i.e., if "c" is nil), then NewChannelEntry
 // allocates a new channel.
 func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
+
 	if c == nil {
 		c = make(chan struct{}, 1)
 	}
 
-	return Entry{Context: c, Callback: &channelCallback{}}, c
+	return Entry{
+		Context: c,
+		Callback: &channelCallback{},
+	}, c
 }
 
 // Queue represents the wait queue where waiters can be added and

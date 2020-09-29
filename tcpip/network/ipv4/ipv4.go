@@ -23,15 +23,16 @@ package ipv4
 import (
 	"sync/atomic"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/network/fragmentation"
-	"github.com/google/netstack/tcpip/network/hash"
-	"github.com/google/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/network/fragmentation"
+	"github.com/blastbao/netstack/tcpip/network/hash"
+	"github.com/blastbao/netstack/tcpip/stack"
 )
 
 const (
+
 	// ProtocolNumber is the ipv4 protocol number.
 	ProtocolNumber = header.IPv4ProtocolNumber
 
@@ -58,6 +59,7 @@ type endpoint struct {
 
 // NewEndpoint creates a new ipv4 endpoint.
 func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+
 	e := &endpoint{
 		nicID:         nicID,
 		id:            stack.NetworkEndpointID{LocalAddress: addrWithPrefix.Address},
@@ -123,14 +125,22 @@ func (e *endpoint) GSOMaxSize() uint32 {
 // includes the IP header and options. This does not support the DontFragment
 // IP flag.
 func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int, pkt tcpip.PacketBuffer) *tcpip.Error {
+
 	// This packet is too big, it needs to be fragmented.
+
+
 	ip := header.IPv4(pkt.Header.View())
 	flags := ip.Flags()
 
-	// Update mtu to take into account the header, which will exist in all
-	// fragments anyway.
-	innerMTU := mtu - int(ip.HeaderLength())
 
+	// innerMTU 即每一个分片能携带数据的最大值
+	// outerMTU 即每一个分片能携带数据和协议头的最大值
+
+
+	// 1. 计算分片数量
+
+	// Update mtu to take into account the header, which will exist in all fragments anyway.
+	innerMTU := mtu - int(ip.HeaderLength())
 	// Round the MTU down to align to 8 bytes. Then calculate the number of
 	// fragments. Calculate fragment sizes as in RFC791.
 	innerMTU &^= 7
@@ -149,16 +159,25 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			h = header.IPv4(pkt.Header.Prepend(int(ip.HeaderLength())))
 			copy(h, ip[:ip.HeaderLength()])
 		}
+
+		// 最后一个分片的 TotalLength 和其他分片不同，其它分片都是 outerMTU，最后分片长度为实际长度。
 		if i != n-1 {
+			// 设置分片长度为 outerMTU
 			h.SetTotalLength(uint16(outerMTU))
+			// 设置分片标志，代表后续还有更多分片
 			h.SetFlagsFragmentOffset(flags|header.IPv4FlagMoreFragments, offset)
 		} else {
+			// 设置分片长度为实际长度
 			h.SetTotalLength(uint16(h.HeaderLength()) + uint16(pkt.Data.Size()))
 			h.SetFlagsFragmentOffset(flags, offset)
 		}
+
+
 		h.SetChecksum(0)
 		h.SetChecksum(^h.CalculateChecksum())
 		offset += uint16(innerMTU)
+
+		// 将分片交给数据链路层处理
 		if i > 0 {
 			newPayload := pkt.Data.Clone(nil)
 			newPayload.CapLength(innerMTU)
@@ -173,6 +192,8 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			pkt.Data.TrimFront(newPayload.Size())
 			continue
 		}
+
+
 		// Special handling for the first fragment because it comes
 		// from the header.
 		if outerMTU >= pkt.Header.UsedLength() {
@@ -215,6 +236,8 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 }
 
 func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv4 {
+
+
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 	length := uint16(hdr.UsedLength() + payloadSize)
 	id := uint32(0)
@@ -223,6 +246,8 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		// fragmented, so we only assign ids to larger packets.
 		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, params.Protocol, e.protocol.hashIV)%buckets], 1)
 	}
+
+	// IPv4 头部格式
 	ip.Encode(&header.IPv4Fields{
 		IHL:         header.IPv4MinimumSize,
 		TotalLength: length,
@@ -233,6 +258,8 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 		SrcAddr:     r.LocalAddress,
 		DstAddr:     r.RemoteAddress,
 	})
+
+	// 校验和
 	ip.SetChecksum(^ip.CalculateChecksum())
 	return ip
 }
@@ -241,6 +268,7 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 
+	// 判断该数据报的处理位置，如果是要在本地处理的话，就进行如下操作：
 	if loop&stack.PacketLoop != 0 {
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 		views[0] = pkt.Header.View()
@@ -338,7 +366,10 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLo
 
 // HandlePacket is called by the link layer when new ipv4 packets arrive for
 // this endpoint.
+//
+//
 func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
+
 	headerView := pkt.Data.First()
 	h := header.IPv4(headerView)
 	if !h.IsValid(pkt.Data.Size()) {

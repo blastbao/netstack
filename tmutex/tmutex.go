@@ -42,6 +42,7 @@ func (m *Mutex) Lock() {
 	}
 
 	for {
+
 		// Try to acquire the mutex again, at the same time making sure
 		// that m.v is negative, which indicates to the owner of the
 		// lock that it is contended, which will force it to try to wake

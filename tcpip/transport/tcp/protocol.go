@@ -25,13 +25,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/tcpip/transport/raw"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/tcpip/transport/raw"
+	"github.com/blastbao/netstack/waiter"
 )
 
 const (
@@ -160,6 +160,7 @@ func (*protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Transpo
 
 // replyWithReset replies to the given segment with a reset segment.
 func replyWithReset(s *segment) {
+
 	// Get the seqnum from the packet if the ack flag is set.
 	seq := seqnum.Value(0)
 	if s.flagIsSet(header.TCPFlagAck) {
@@ -249,60 +250,61 @@ func (p *protocol) SetOption(option interface{}) *tcpip.Error {
 // Option implements TransportProtocol.Option.
 func (p *protocol) Option(option interface{}) *tcpip.Error {
 	switch v := option.(type) {
+	// 选择重传
 	case *SACKEnabled:
 		p.mu.Lock()
 		*v = SACKEnabled(p.sackEnabled)
 		p.mu.Unlock()
 		return nil
-
+	// 延迟发送
 	case *DelayEnabled:
 		p.mu.Lock()
 		*v = DelayEnabled(p.delayEnabled)
 		p.mu.Unlock()
 		return nil
-
+	// 发送缓冲大小
 	case *SendBufferSizeOption:
 		p.mu.Lock()
 		*v = p.sendBufferSize
 		p.mu.Unlock()
 		return nil
-
+	// 接收缓冲大小
 	case *ReceiveBufferSizeOption:
 		p.mu.Lock()
 		*v = p.recvBufferSize
 		p.mu.Unlock()
 		return nil
-
+	// 拥塞控制
 	case *tcpip.CongestionControlOption:
 		p.mu.Lock()
 		*v = tcpip.CongestionControlOption(p.congestionControl)
 		p.mu.Unlock()
 		return nil
-
+	// 拥塞控制
 	case *tcpip.AvailableCongestionControlOption:
 		p.mu.Lock()
 		*v = tcpip.AvailableCongestionControlOption(strings.Join(p.availableCongestionControl, " "))
 		p.mu.Unlock()
 		return nil
-
+	//
 	case *tcpip.ModerateReceiveBufferOption:
 		p.mu.Lock()
 		*v = tcpip.ModerateReceiveBufferOption(p.moderateReceiveBuffer)
 		p.mu.Unlock()
 		return nil
-
+	// 超时时间
 	case *tcpip.TCPLingerTimeoutOption:
 		p.mu.Lock()
 		*v = tcpip.TCPLingerTimeoutOption(p.tcpLingerTimeout)
 		p.mu.Unlock()
 		return nil
-
+	// 超时时间
 	case *tcpip.TCPTimeWaitTimeoutOption:
 		p.mu.Lock()
 		*v = tcpip.TCPTimeWaitTimeoutOption(p.tcpTimeWaitTimeout)
 		p.mu.Unlock()
 		return nil
-
+	// 报错
 	default:
 		return tcpip.ErrUnknownProtocolOption
 	}

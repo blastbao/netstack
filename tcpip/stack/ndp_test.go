@@ -21,14 +21,14 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/checker"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/link/channel"
-	"github.com/google/netstack/tcpip/network/ipv6"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/tcpip/transport/icmp"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/checker"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/link/channel"
+	"github.com/blastbao/netstack/tcpip/network/ipv6"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/tcpip/transport/icmp"
 )
 
 const (

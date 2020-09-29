@@ -18,8 +18,8 @@ import (
 	"encoding/binary"
 
 	"github.com/google/btree"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/seqnum"
 )
 
 // These constants are the offsets of the respective fields in the TCP header.
@@ -100,24 +100,30 @@ type TCPFields struct {
 // TCPSynOptions is used to return the parsed TCP Options in a syn
 // segment.
 type TCPSynOptions struct {
+
 	// MSS is the maximum segment size provided by the peer in the SYN.
+	// 对端提供的最大报文段大小
 	MSS uint16
 
 	// WS is the window scale option provided by the peer in the SYN.
-	//
 	// Set to -1 if no window scale option was provided.
+	// 对端提供的窗口缩放选项，如果是 -1 的话，就相当于没有开启这个功能
 	WS int
 
 	// TS is true if the timestamp option was provided in the syn/syn-ack.
+	// 是否在 syn/syn-ack 过程中提供了 timestamp 选项
 	TS bool
 
 	// TSVal is the value of the TSVal field in the timestamp option.
+	// 下面两个都是 Timestamp 的标示位，用来计算 RTT 的，Val 是时间戳的当前值
 	TSVal uint32
 
 	// TSEcr is the value of the TSEcr field in the timestamp option.
+	// 这个只在 TCP 头部中设置了 ACK 才有效，如果有效的话，它表示的是对等端 TSVal 字段中发送的时间戳值
 	TSEcr uint32
 
 	// SACKPermitted is true if the SACK option was provided in the SYN/SYN-ACK.
+	// 用来设置 SACK 这个功能是否被开启，SACK 用来让接收方告诉发送方哪些报文段丢失
 	SACKPermitted bool
 }
 
@@ -125,6 +131,7 @@ type TCPSynOptions struct {
 //
 // +stateify savable
 type SACKBlock struct {
+
 	// Start indicates the lowest sequence number in the block.
 	Start seqnum.Value
 
@@ -165,23 +172,36 @@ type TCPOptions struct {
 type TCP []byte
 
 const (
+
 	// TCPMinimumSize is the minimum size of a valid TCP packet.
+	//
+	// TCP 由报头和数据两部分组成，报头最小为 20 字节，最大为 20 + 40 = 60 字节。
 	TCPMinimumSize = 20
 
 	// TCPOptionsMaximumSize is the maximum size of TCP options.
+	//
+	// TCP 报头由 20B 的固定部分和 0~40B 的选项部分组成。
 	TCPOptionsMaximumSize = 40
 
 	// TCPHeaderMaximumSize is the maximum header size of a TCP packet.
+	//
+	// TCP 报头最大长度 60B
 	TCPHeaderMaximumSize = TCPMinimumSize + TCPOptionsMaximumSize
 
 	// TCPProtocolNumber is TCP's transport protocol number.
+	//
+	// TCP 传输层协议号
 	TCPProtocolNumber tcpip.TransportProtocolNumber = 6
 
 	// TCPMinimumMSS is the minimum acceptable value for MSS. This is the
 	// same as the value TCP_MIN_MSS defined net/tcp.h.
+	//
+	// TCP 最小分段长度
 	TCPMinimumMSS = IPv4MaximumHeaderSize + TCPHeaderMaximumSize + MinIPFragmentPayloadSize - IPv4MinimumSize - TCPMinimumSize
 
 	// TCPMaximumMSS is the maximum acceptable value for MSS.
+	//
+	// TCP 最大分段长度
 	TCPMaximumMSS = 0xffff
 
 	// TCPDefaultMSS is the MSS value that should be used if an MSS option
@@ -190,6 +210,9 @@ const (
 	//
 	// Per RFC 1122, page 85: "If an MSS option is not received at
 	// connection setup, TCP MUST assume a default send MSS of 536."
+	//
+	//
+	// TCP 默认分段大小
 	TCPDefaultMSS = 536
 )
 
@@ -319,9 +342,11 @@ func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 	limit := len(opts)
 
 	synOpts := TCPSynOptions{
+
 		// Per RFC 1122, page 85: "If an MSS option is not received at
 		// connection setup, TCP MUST assume a default send MSS of 536."
 		MSS: TCPDefaultMSS,
+
 		// If no window scale option is specified, WS in options is
 		// returned as -1; this is because the absence of the option
 		// indicates that the we cannot use window scaling on the
@@ -549,8 +574,7 @@ func EncodeNOP(b []byte) int {
 // must have space for the padding bytes.
 func AddTCPOptionPadding(options []byte, offset int) int {
 	paddingToAdd := -offset & 3
-	// Now add any padding bytes that might be required to quad align the
-	// options.
+	// Now add any padding bytes that might be required to quad align the options.
 	for i := offset; i < offset+paddingToAdd; i++ {
 		options[i] = TCPOptionNOP
 	}

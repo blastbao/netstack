@@ -27,25 +27,30 @@ package packet
 import (
 	"sync"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/iptables"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/iptables"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // +stateify savable
 type packet struct {
+
 	packetEntry
-	// data holds the actual packet data, including any headers and
-	// payload.
+
+	// data holds the actual packet data, including any headers and payload.
 	data buffer.VectorisedView
+
 	// timestampNS is the unix time at which the packet was received.
 	timestampNS int64
+
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
+
 }
+
 
 // endpoint is the packet socket implementation of tcpip.Endpoint. It is legal
 // to have goroutines make concurrent calls into the endpoint.
@@ -56,16 +61,16 @@ type packet struct {
 //
 // +stateify savable
 type endpoint struct {
+
 	stack.TransportEndpointInfo
-	// The following fields are initialized at creation time and are
-	// immutable.
+
+	// The following fields are initialized at creation time and are immutable.
 	stack       *stack.Stack
 	netProto    tcpip.NetworkProtocolNumber
 	waiterQueue *waiter.Queue
 	cooked      bool
 
-	// The following fields are used to manage the receive queue and are
-	// protected by rcvMu.
+	// The following fields are used to manage the receive queue and are protected by rcvMu.
 	rcvMu         sync.Mutex
 	rcvList       packetList
 	rcvBufSizeMax int
@@ -81,6 +86,7 @@ type endpoint struct {
 
 // NewEndpoint returns a new packet endpoint.
 func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {
+
 	ep := &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
@@ -101,6 +107,7 @@ func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumb
 
 // Close implements tcpip.Endpoint.Close.
 func (ep *endpoint) Close() {
+
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 

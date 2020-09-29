@@ -17,14 +17,14 @@ package header
 import (
 	"encoding/binary"
 
-	"github.com/google/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip"
 )
 
 const (
 	versIHL = 0
 	tos     = 1
-	// IPv4TotalLenOffset is the offset of the total length field in the
-	// IPv4 header.
+
+	// IPv4TotalLenOffset is the offset of the total length field in the IPv4 header.
 	IPv4TotalLenOffset = 2
 	id                 = 4
 	flagsFO            = 6
@@ -38,6 +38,7 @@ const (
 // IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
 // fields of a packet that needs to be encoded.
 type IPv4Fields struct {
+
 	// IHL is the "internet header length" field of an IPv4 packet.
 	IHL uint8
 
@@ -298,6 +299,8 @@ func (b IPv4) IsValid(pktSize int) bool {
 // IsV4MulticastAddress determines if the provided address is an IPv4 multicast
 // address (range 224.0.0.0 to 239.255.255.255). The four most significant bits
 // will be 1110 = 0xe0.
+//
+// 判断是否为多播地址。
 func IsV4MulticastAddress(addr tcpip.Address) bool {
 	if len(addr) != IPv4AddressSize {
 		return false

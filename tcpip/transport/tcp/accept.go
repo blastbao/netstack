@@ -22,18 +22,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/netstack/rand"
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/rand"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/waiter"
 )
 
 const (
+
 	// tsLen is the length, in bits, of the timestamp in the SYN cookie.
+	// tsLen 是 SYN cookie 中时间戳的长度，单位为 bit 。
 	tsLen = 8
 
 	// tsMask is a mask for timestamp values (i.e., tsLen bits).
@@ -52,6 +54,7 @@ const (
 )
 
 var (
+
 	// SynRcvdCountThreshold is the global maximum number of connections
 	// that are allowed to be in SYN-RCVD state before TCP starts using SYN
 	// cookies to accept connections.
@@ -60,9 +63,11 @@ var (
 	// be used by importers of this package.
 	SynRcvdCountThreshold uint64 = 1000
 
+
 	// mssTable is a slice containing the possible MSS values that we
 	// encode in the SYN cookie with two bits.
 	mssTable = []uint16{536, 1300, 1440, 1460}
+
 )
 
 func encodeMSS(mss uint16) uint32 {
@@ -115,12 +120,15 @@ func timeStamp() uint32 {
 	return uint32(time.Now().Unix()>>6) & tsMask
 }
 
-// incSynRcvdCount tries to increment the global number of endpoints in SYN-RCVD
-// state. It succeeds if the increment doesn't make the count go beyond the
-// threshold, and fails otherwise.
+// incSynRcvdCount tries to increment the global number of endpoints in SYN-RCVD state.
+// It succeeds if the increment doesn't make the count go beyond the threshold,
+// and fails otherwise.
+//
+// incSynRcvdCount 试图递增全局处于 SYN-RCVD 状态的端点数量，如果总数超过阈值，则报 false ，此时不接受新的 syn 请求。
+//
 func incSynRcvdCount() bool {
-	synRcvdCount.Lock()
 
+	synRcvdCount.Lock()
 	if synRcvdCount.value >= SynRcvdCountThreshold {
 		synRcvdCount.Unlock()
 		return false
@@ -133,9 +141,11 @@ func incSynRcvdCount() bool {
 	return true
 }
 
-// decSynRcvdCount atomically decrements the global number of endpoints in
-// SYN-RCVD state. It must only be called if a previous call to incSynRcvdCount
-// succeeded.
+// decSynRcvdCount atomically decrements the global number of endpoints in SYN-RCVD state.
+// It must only be called if a previous call to incSynRcvdCount succeeded.
+//
+//
+//
 func decSynRcvdCount() {
 	synRcvdCount.Lock()
 
@@ -154,7 +164,15 @@ func synCookiesInUse() bool {
 }
 
 // newListenContext creates a new listen context.
-func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, v6only bool, netProto tcpip.NetworkProtocolNumber) *listenContext {
+func newListenContext(
+	stk *stack.Stack,
+	listenEP *endpoint,
+	rcvWnd seqnum.Size,
+	v6only bool,
+	netProto tcpip.NetworkProtocolNumber,
+) *listenContext {
+
+	// 构造 listen 上下文
 	l := &listenContext{
 		stack:            stk,
 		rcvWnd:           rcvWnd,
@@ -165,6 +183,7 @@ func newListenContext(stk *stack.Stack, listenEP *endpoint, rcvWnd seqnum.Size, 
 		pendingEndpoints: make(map[stack.TransportEndpointID]*endpoint),
 	}
 
+	// 生成 2 个随机数
 	rand.Read(l.nonce[0][:])
 	rand.Read(l.nonce[1][:])
 
@@ -222,12 +241,23 @@ func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnu
 
 // createConnectingEndpoint creates a new endpoint in a connecting state, with
 // the connection parameters given by the arguments.
-func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, irs seqnum.Value, rcvdSynOpts *header.TCPSynOptions) (*endpoint, *tcpip.Error) {
+//
+// createConnectingEndpoint 创建一个处于 "正在连接" 状态的新端点，连接参数由参数给出。
+func (l *listenContext) createConnectingEndpoint(
+	s *segment,							//
+	iss seqnum.Value,					//
+	irs seqnum.Value,					//
+	rcvdSynOpts *header.TCPSynOptions, 	// 连接参数
+) (*endpoint, *tcpip.Error) {
+
 	// Create a new endpoint.
+
+	// 网络协议
 	netProto := l.netProto
 	if netProto == 0 {
 		netProto = s.route.NetProto
 	}
+
 	n := newEndpoint(l.stack, netProto, nil)
 	n.v6only = l.v6only
 	n.ID = s.id
@@ -256,6 +286,8 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	// but the caller may change it (before starting the protocol loop).
 	n.snd = newSender(n, iss, irs, s.window, rcvdSynOpts.MSS, rcvdSynOpts.WS)
 	n.rcv = newReceiver(n, irs, seqnum.Size(n.initialReceiveWindow()), 0, seqnum.Size(n.receiveBufferSize()))
+
+
 	// Bootstrap the auto tuning algorithm. Starting at zero will result in
 	// a large step function on the first window adjustment causing the
 	// window to grow to a really large value.
@@ -264,10 +296,19 @@ func (l *listenContext) createConnectingEndpoint(s *segment, iss seqnum.Value, i
 	return n, nil
 }
 
-// createEndpoint creates a new endpoint in connected state and then performs
-// the TCP 3-way handshake.
+// createEndpoint creates a new endpoint in connected state and then performs the TCP 3-way handshake.
+// createEndpoint 在连接状态下创建一个新的 Endpoint ，然后执行 TCP 三次握手 Handshake 。
+//
+// 也就是说，等待请求的是一个 Endpoint ，处理请求的又是另一个 Endpoint ，这里涉及到 Endpoint 状态的更改，
+// 并且没有什么强关系，所以完全可以交给两个 Endpoint 分别去负责，这个处理方式值得借鉴。
+// 创建完 Endpoint 之后，就是要去创建 Handshake 了，并且这个 resetToSynRcvd() 函数算是直接告诉我们这里的 Handshake 状态
+// 为 handshakeSynRcvd。也就是说，Sever 初始的 Handshake 就是这个，这个弄清楚之后，我们来看一下执行发生了什么。
+
 func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions) (*endpoint, *tcpip.Error) {
+
 	// Create new endpoint.
+	//
+	// 从 Listen Endpoint 创建一个 Handshake Endpoint ，让其负责连接建立。
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Seed())
 	ep, err := l.createConnectingEndpoint(s, isn, irs, opts)
@@ -276,6 +317,8 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 	}
 
 	// listenEP is nil when listenContext is used by tcp.Forwarder.
+	//
+	// 当 listenContext 被 tcp.Forwarder 使用时，listenEP 为 nil 。
 	if l.listenEP != nil {
 		l.listenEP.mu.Lock()
 		if l.listenEP.state != StateListen {
@@ -286,9 +329,9 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		l.listenEP.mu.Unlock()
 	}
 
+
 	// Perform the 3-way handshake.
 	h := newHandshake(ep, seqnum.Size(ep.initialReceiveWindow()))
-
 	h.resetToSynRcvd(isn, irs, opts)
 	if err := h.execute(); err != nil {
 		ep.Close()
@@ -297,15 +340,17 @@ func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *head
 		}
 		return nil, err
 	}
+
 	ep.mu.Lock()
-	ep.stack.Stats().TCP.CurrentEstablished.Increment()
-	ep.state = StateEstablished
-	ep.isConnectNotified = true
+	ep.stack.Stats().TCP.CurrentEstablished.Increment()		// 已建立连接数 ++
+	ep.state = StateEstablished 							// 将 ep 状态修改为 "Established"
+	ep.isConnectNotified = true 							//
 	ep.mu.Unlock()
 
-	// Update the receive window scaling. We can't do it before the
-	// handshake because it's possible that the peer doesn't support window
-	// scaling.
+	// Update the receive window scaling. We can't do it before the handshake
+	// because it's possible that the peer doesn't support window scaling.
+	//
+	// 更新接收窗口的比例。我们不能在握手前进行设置，因为有可能对端不支持窗口缩放。
 	ep.rcv.rcvWndScale = h.effectiveRcvWndScale()
 
 	return ep, nil
@@ -334,22 +379,27 @@ func (l *listenContext) closeAllPendingEndpoints() {
 	l.pending.Wait()
 }
 
-// deliverAccepted delivers the newly-accepted endpoint to the listener. If the
-// endpoint has transitioned out of the listen state, the new endpoint is closed
-// instead.
+// deliverAccepted delivers the newly-accepted endpoint to the listener.
+// If the endpoint has transitioned out of the listen state, the new endpoint is closed instead.
+//
+// deliverAccepted 将新接受的 endpoint 传送给 listener ，如果 listener 已经脱离了 listen 状态，新 endpoint 将被关闭。
 func (e *endpoint) deliverAccepted(n *endpoint) {
+
 	e.mu.Lock()
 	state := e.state
 	e.pendingAccepted.Add(1)
 	defer e.pendingAccepted.Done()
 	acceptedChan := e.acceptedChan
 	e.mu.Unlock()
+
+	// 如果 e.state 为 listening 状态，则将 n 传送给 e.acceptedChan 并通知它，否则关闭 n 。
 	if state == StateListen {
 		acceptedChan <- n
 		e.waiterQueue.Notify(waiter.EventIn)
 	} else {
 		n.Close()
 	}
+
 }
 
 // handleSynSegment is called in its own goroutine once the listening endpoint
@@ -358,28 +408,42 @@ func (e *endpoint) deliverAccepted(n *endpoint) {
 //
 // A limited number of these goroutines are allowed before TCP starts using SYN
 // cookies to accept connections.
+//
+// 一旦 listening 端点接收到 SYN segment，就会在自己的 goroutine 中调用 handleSynSegment ，
+// 它负责完成握手和排队接受新的 Connected EndPoint 。
+//
+// 在 TCP 使用 SYN cookies 接受连接之前，允许使用有限数量的 goroutine 。
 func (e *endpoint) handleSynSegment(ctx *listenContext, s *segment, opts *header.TCPSynOptions) {
+
+	// 不论最后有没有成功建立连接，把半连接数量 -1
 	defer decSynRcvdCount()
 	defer e.decSynRcvdCount()
 	defer s.decRef()
 
+	// 创建的一个新的 Endpoint 并执行 Handshake 操作
 	n, err := ctx.createEndpointAndPerformHandshake(s, opts)
 	if err != nil {
-		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()
-		e.stats.FailedConnectionAttempts.Increment()
+		e.stack.Stats().TCP.FailedConnectionAttempts.Increment()	// connect 失败计数
+		e.stats.FailedConnectionAttempts.Increment()				// connect 失败计数
 		return
 	}
+
+	// 执行 handshake 成功，从 ctx.pendingEndpoints 中移除 n
 	ctx.removePendingEndpoint(n)
+
 	// Start the protocol goroutine.
+	// 启动协议协程，负责发送和接收 segments 。
 	wq := &waiter.Queue{}
 	n.startAcceptedLoop(wq)
 	e.stack.Stats().TCP.PassiveConnectionOpenings.Increment()
 
+	// e 为 listening endpoint ，把当前 n 传递给 e.acceptedChan 并通知 e 处理它。
 	e.deliverAccepted(n)
 }
 
 func (e *endpoint) incSynRcvdCount() bool {
 	e.mu.Lock()
+	// 如果处于 Sync Rcvd 状态的 Endpoint 总数超过 accChan 容量，则返回 False，否则 e.synRcvdCount++
 	if e.synRcvdCount >= cap(e.acceptedChan) {
 		e.mu.Unlock()
 		return false
@@ -405,47 +469,94 @@ func (e *endpoint) acceptQueueIsFull() bool {
 	return false
 }
 
-// handleListenSegment is called when a listening endpoint receives a segment
-// and needs to handle it.
+// handleListenSegment is called when a listening endpoint receives a segment and needs to handle it.
+//
+// 当 Listen Endpoint 收到一个 segment 时，会调用 handleListenSegment 处理它。
 func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
+
+	// 如果 s 为 SYN-ACK 报文，直接回复 RST ，否则若回复 ACK ，会完成旧的握手，建立错误连接。
 	if s.flagsAreSet(header.TCPFlagSyn | header.TCPFlagAck) {
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
-		e.sendTCP(&s.route, s.id, buffer.VectorisedView{}, e.ttl, e.sendTOS, header.TCPFlagRst, s.ackNumber, 0, 0, nil, nil)
+		//
+		// RFC 793 第 3.4 节第 35 页（图12）概述了在 listen 状态下必须发送 RST 来响应 SYN-ACK ，
+		// 以防止从一个旧的 SYN 完成握手。
+		e.sendTCP(
+			&s.route,
+			s.id,
+			buffer.VectorisedView{},
+			e.ttl,
+			e.sendTOS,
+			header.TCPFlagRst,	// RST 报文
+			s.ackNumber,
+			0,
+			0,
+			nil,
+			nil,
+		)
 		return
 	}
 
-	// TODO(b/143300739): Use the userMSS of the listening socket
-	// for accepted sockets.
+
+	// TODO(b/143300739): Use the userMSS of the listening socket for accepted sockets.
+
+
+	// 至此，只有可能是 Syn 或者 Ack 报文。
 
 	switch {
+	// 如果是 SYN 报文，说明该连接处于三步握手的第一步。
+	//
+	// 为什么不是第二步？因为这是 Listen 函数，当前处于连接的被动方。
+	//
+	// 这里会有一个队列，称为 SYN_RCVD 队列或半连接队列，长度为 max(64,/proc/sys/net/ipv4/tcp_max_syn_backlog) 。
+	// 当 SYN_RCVD 队列满了，在不开启 syncookies 的时候，Server 会丢弃新来的 SYN 包，而 Client 端在多次重发 SYN 包
+	// 得不到响应而返回（connection time out）错误。
+	// 但是，当 Server 端开启了 syncookies=1，那么 SYN 半连接队列就没有逻辑上的最大值了，
+	// 并且 /proc/sys/net/ipv4/tcp_max_syn_backlog 设置的值也会被忽略。
+	//
+	// 注意，在 netstack 中，默认开启了 syncookies。
 	case s.flags == header.TCPFlagSyn:
+
+		// 解析 tcp 选项
 		opts := parseSynSegmentOptions(s)
+
+		// SYN_RCVD 半连接队列长度 +1，成功返回 true，队列已满返回 false，走 else 分支。
 		if incSynRcvdCount() {
+
 			// Only handle the syn if the following conditions hold
 			//   - accept queue is not full.
 			//   - number of connections in synRcvd state is less than the
 			//     backlog.
+			//
+			// 如果 acceptChan 未满，则处理 syn 报文 s 。
 			if !e.acceptQueueIsFull() && e.incSynRcvdCount() {
 				s.incRef()
+				// 处理 Syn 报文
 				go e.handleSynSegment(ctx, s, &opts)
 				return
 			}
+
+			// 至此，意味着 acceptChan 已满，无法接受新 Syn 请求。
 			decSynRcvdCount()
-			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
-			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
-			e.stack.Stats().DroppedPackets.Increment()
+			e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()		// syn 队列满
+			e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()		// syn 队列满
+			e.stack.Stats().DroppedPackets.Increment() 					// 丢包
 			return
+
+
 		} else {
-			// If cookies are in use but the endpoint accept queue
-			// is full then drop the syn.
+
+			// If cookies are in use but the endpoint accept queue is full then drop the syn.
+			// 如果已经启用了 SYNCookies 策略，SYN 半连接队列就没有逻辑上的最大值，但若接受队列已满，也只能放弃 syn 报文。
 			if e.acceptQueueIsFull() {
 				e.stack.Stats().TCP.ListenOverflowSynDrop.Increment()
 				e.stats.ReceiveErrors.ListenOverflowSynDrop.Increment()
 				e.stack.Stats().DroppedPackets.Increment()
 				return
 			}
+
+			//
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
 			// Send SYN without window scaling because we currently
@@ -464,7 +575,11 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 
+	// 如果数据包没有 SYN 而有 ACK 标识的话，那么根据三次握手，它属于第三步。
+	// 验证其合法后，该数据包对应的连接已经建立，那么为该连接创建一个新的 endpoint，将其发给 Accept 队列。
 	case (s.flags & header.TCPFlagAck) != 0:
+
+		// 若接受队列已满，只能放弃 syn 报文。
 		if e.acceptQueueIsFull() {
 			// Silently drop the ack as the application can't accept
 			// the connection at this point. The ack will be
@@ -477,7 +592,9 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			return
 		}
 
+		// 若未开启 SYNCookies 策略，
 		if !synCookiesInUse() {
+
 			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
 			// Any acknowledgment is bad if it arrives on a connection still in
 			// the LISTEN state.  An acceptable reset segment should be formed
@@ -493,6 +610,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			// The only time we should reach here when a connection
 			// was opened and closed really quickly and a delayed
 			// ACK was received from the sender.
+
 			replyWithReset(s)
 			return
 		}
@@ -568,18 +686,27 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 	}
 }
 
-// protocolListenLoop is the main loop of a listening TCP endpoint. It runs in
-// its own goroutine and is responsible for handling connection requests.
+// protocolListenLoop is the main loop of a listening TCP endpoint.
+// It runs in its own goroutine and is responsible for handling connection requests.
+//
+// protocolListenLoop 是 listening endpoint 的主循环，它在独立的 goroutine 中运行，负责处理建立连接请求。
+//
+//
+//
 func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
+
 	e.mu.Lock()
 	v6only := e.v6only
 	e.mu.Unlock()
+
+	// 构造 listen 上下文
 	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
+
 	defer func() {
+
 		// Mark endpoint as closed. This will prevent goroutines running
-		// handleSynSegment() from attempting to queue new connections
-		// to the endpoint.
+		// handleSynSegment() from attempting to queue new connections to the endpoint.
 		e.mu.Lock()
 		e.state = StateClose
 
@@ -596,15 +723,22 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 
 		// Notify waiters that the endpoint is shutdown.
 		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut)
+
+
 	}()
+
 
 	s := sleep.Sleeper{}
 	s.AddWaker(&e.notificationWaker, wakerForNotification)
 	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)
+
 	for {
+
 		switch index, _ := s.Fetch(true); index {
+
 		case wakerForNotification:
 			n := e.fetchNotifications()
+			// 表示收到退出通知
 			if n&notifyClose != 0 {
 				return nil
 			}
@@ -621,6 +755,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 		case wakerForNewSegment:
 			// Process at most maxSegmentsPerWake segments.
 			mayRequeue := true
+			// maxSegmentsPerWake == 100，因为收到一个通知可能对应收到多个数据包，所以每次 wake 都处理多次。
 			for i := 0; i < maxSegmentsPerWake; i++ {
 				s := e.segmentQueue.dequeue()
 				if s == nil {
@@ -632,8 +767,8 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 				s.decRef()
 			}
 
-			// If the queue is not empty, make sure we'll wake up
-			// in the next iteration.
+			// If the queue is not empty, make sure we'll wake up in the next iteration.
+			// 经过 maxSegmentsPerWake 次循环仍然没有处理完所有的包，再次唤醒 waker ，继续处理。
 			if mayRequeue && !e.segmentQueue.empty() {
 				e.newSegmentWaker.Assert()
 			}

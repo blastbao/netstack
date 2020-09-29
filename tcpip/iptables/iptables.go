@@ -30,10 +30,13 @@ const (
 	chainNamePostrouting = "POSTROUTING"
 )
 
-// DefaultTables returns a default set of tables. Each chain is set to accept
-// all packets.
+// DefaultTables returns a default set of tables.
+//
+// Each chain is set to accept all packets.
+//
 func DefaultTables() IPTables {
 	return IPTables{
+		// TableName => Table
 		Tables: map[string]Table{
 			tablenameNat: Table{
 				BuiltinChains: map[Hook]Chain{
@@ -62,6 +65,7 @@ func DefaultTables() IPTables {
 				UserChains: map[string]Chain{},
 			},
 		},
+		// Hook => TableNames
 		Priorities: map[Hook][]string{
 			Prerouting: []string{tablenameMangle, tablenameNat},
 			Output:     []string{tablenameMangle, tablenameNat},
@@ -74,6 +78,9 @@ func unconditionalAcceptChain(name string) Chain {
 		Name: name,
 		Rules: []Rule{
 			Rule{
+				// 匹配任何包
+				Matchers: nil,
+				// 无条件 Accept
 				Target: UnconditionalAcceptTarget{},
 			},
 		},

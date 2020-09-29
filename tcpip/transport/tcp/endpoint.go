@@ -23,17 +23,17 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/netstack/rand"
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/hash/jenkins"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/iptables"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/tmutex"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/rand"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/hash/jenkins"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/iptables"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/tmutex"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // EndpointState represents the state of a TCP endpoint.
@@ -43,6 +43,7 @@ type EndpointState uint32
 // may not be meaningful externally. Specifically, they need to be translated to
 // Linux's representation for these states if presented to userspace.
 const (
+
 	// Endpoint states internal to netstack. These map to the TCP state CLOSED.
 	StateInitial EndpointState = iota
 	StateBound
@@ -61,6 +62,8 @@ const (
 	StateLastAck
 	StateListen
 	StateClosing
+
+
 )
 
 // connected is the set of states where an endpoint is connected to a peer.
@@ -121,6 +124,7 @@ const (
 	notifyReset
 	notifyKeepaliveChanged
 	notifyMSSChanged
+
 	// notifyTickleWorker is used to tickle the protocol main loop during a
 	// restore after we update the endpoint state to the correct one. This
 	// ensures the loop terminates if the final state of the endpoint is
@@ -132,13 +136,13 @@ const (
 //
 // +stateify savable
 type SACKInfo struct {
-	// Blocks is the maximum number of SACK blocks we track
-	// per endpoint.
+
+	// Blocks is the maximum number of SACK blocks we track per endpoint.
 	Blocks [MaxSACKBlocks]header.SACKBlock
 
-	// NumBlocks is the number of valid SACK blocks stored in the
-	// blocks array above.
+	// NumBlocks is the number of valid SACK blocks stored in the blocks array above.
 	NumBlocks int
+
 }
 
 // rcvBufAutoTuneParams are used to hold state variables to compute
@@ -337,6 +341,7 @@ type endpoint struct {
 	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
+
 	// TCP should never broadcast but Linux nevertheless supports enabling/
 	// disabling SO_BROADCAST, albeit as a NOOP.
 	broadcast bool
@@ -424,6 +429,8 @@ type endpoint struct {
 	// for this endpoint using the TCP_MAXSEG setsockopt.
 	userMSS uint16
 
+
+
 	// The following fields are used to manage the send buffer. When
 	// segments are ready to be sent, they are added to sndQueue and the
 	// protocol goroutine is signaled via sndWaker.
@@ -435,9 +442,12 @@ type endpoint struct {
 	sndBufUsed    int
 	sndClosed     bool
 	sndBufInQueue seqnum.Size
-	sndQueue      segmentList
+	sndQueue      segmentList 	// 用来保存还未发出的数据
 	sndWaker      sleep.Waker
 	sndCloseWaker sleep.Waker
+
+
+
 
 	// cc stores the name of the Congestion Control algorithm to use for
 	// this endpoint.
@@ -478,6 +488,7 @@ type endpoint struct {
 	// acceptedChan is used by a listening endpoint protocol goroutine to
 	// send newly accepted connections to the endpoint so that they can be
 	// read by Accept() calls.
+	//
 	acceptedChan chan *endpoint
 
 	// The following are only used from the protocol goroutine, and
@@ -955,8 +966,16 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 // moment. If the endpoint is not writable then it returns an error
 // indicating the reason why it's not writable.
 // Caller must hold e.mu and e.sndBufMu
+//
+// isEndpointWritableLocked 检查给定的 endpoint 是否可写，同时返回此刻可写的字节数。
+// 如果 endpoint 不可写，则返回一个错误，说明不可写的原因。
+//
+// isEndpointWritableLocked 的调用者必须持有 e.mu 和 e.sndBufMu 。
+//
 func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
+
 	// The endpoint cannot be written to if it's not connected.
+	// 如果未处于 "已连接" 状态，不允许写操作，报错。
 	if !e.state.connected() {
 		switch e.state {
 		case StateError:
@@ -967,26 +986,33 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 	}
 
 	// Check if the connection has already been closed for sends.
+	// 检查是否已经关闭了发送的单向连接。
 	if e.sndClosed {
 		return 0, tcpip.ErrClosedForSend
 	}
 
+	// 检查发送窗口大小
 	avail := e.sndBufSize - e.sndBufUsed
+	// 可用窗口 <= 0 ，暂时不可发送，返回一个 ‘暂时性’ 的错误，表示多试几次即可
 	if avail <= 0 {
 		return 0, tcpip.ErrWouldBlock
 	}
+
+	// 返回可用的写缓冲区大小
 	return avail, nil
 }
 
 // Write writes data to the endpoint's peer.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+
+
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
 
+	// 1. 检查对端 e 是否可写，返回可写的字节数 avail 。
 	e.mu.RLock()
 	e.sndBufMu.Lock()
-
 	avail, err := e.isEndpointWritableLocked()
 	if err != nil {
 		e.sndBufMu.Unlock()
@@ -997,15 +1023,23 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	// We can release locks while copying data.
 	//
+	// 从 Payloader 中获取待写数据时可以释放锁，避免阻塞其它写入操作，提高并发度。
+	// 但是，有可能读取完数据后，写入缓存区不足了，此时无法写入，可能要丢弃数据。
+
+
 	// This is not possible if atomic is set, because we can't allow the
 	// available buffer space to be consumed by some other caller while we
 	// are copying data in.
+	//
+	// 如果 Atomic 为 true ，从 Payloader 获取的所有数据必须写入端点 e ，此时必须持有锁，避免可用的缓冲区空间被其他调用者消耗掉。
+	// 如果 Atomic 为 false ，便可以在复制数据的同时释放锁，那么写缓冲空间不足，从 Payloader 获取的数据可能会被丢弃。
 	if !opts.Atomic {
 		e.sndBufMu.Unlock()
 		e.mu.RUnlock()
 	}
 
 	// Fetch data.
+	// 获取待写入数据，至多 avail 个字节，避免缓冲区溢出。
 	v, perr := p.Payload(avail)
 	if perr != nil || len(v) == 0 {
 		if opts.Atomic { // See above.
@@ -1013,15 +1047,19 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			e.mu.RUnlock()
 		}
 		// Note that perr may be nil if len(v) == 0.
+		// 注意，如果 len(v) == 0 则 p 可能是 nil 。
 		return 0, nil, perr
 	}
 
+	// 如果 Atomic 为 false ，则在 p.Payload(avail) 获取数据前已经释放锁，现在需要重新获得锁，以便后续写入数据。
 	if !opts.Atomic { // See above.
 		e.mu.RLock()
 		e.sndBufMu.Lock()
 
 		// Because we released the lock before copying, check state again
 		// to make sure the endpoint is still in a valid state for a write.
+		//
+		// 因为在获取数据前释放了锁，所以要再次检查状态，以确保端点 e 仍然处于可写状态。
 		avail, err = e.isEndpointWritableLocked()
 		if err != nil {
 			e.sndBufMu.Unlock()
@@ -1032,10 +1070,15 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 		// Discard any excess data copied in due to avail being reduced due
 		// to a simultaneous write call to the socket.
+		//
+		// 上面重新获取可用写 avail 大小，并发写的存在可能导致 avail 变小，此时要丢弃多余数据 v[avail:] 。
 		if avail < len(v) {
 			v = v[:avail]
 		}
 	}
+
+
+
 
 	// Add data to the send queue.
 	s := newSegmentFromView(&e.route, e.ID, v)
@@ -1043,10 +1086,12 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	e.sndBufInQueue += seqnum.Size(len(v))
 	e.sndQueue.PushBack(s)
 	e.sndBufMu.Unlock()
-	// Release the endpoint lock to prevent deadlocks due to lock
-	// order inversion when acquiring workMu.
+
+	// Release the endpoint lock to prevent deadlocks due to lock order inversion when acquiring workMu.
+	// 获取 e.workMu 锁时，先释放 e.mu 锁，防止因锁序倒置而造成死锁。
 	e.mu.RUnlock()
 
+	//
 	if e.workMu.TryLock() {
 		// Do the work inline.
 		e.handleWrite()
@@ -1961,14 +2006,18 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	}
 	e.workerRunning = true
 
-	go e.protocolListenLoop(
-		seqnum.Size(e.receiveBufferAvailable()))
+
+	// 在 protocolListenLoop 中监听新的连接请求，主要处理三步握手的 SYN 报文和 ACK 报文，负责连接的被动建立。
+	go e.protocolListenLoop(seqnum.Size(e.receiveBufferAvailable())) // 这里启动时，同时设置了 rcvBuf 的大小
 
 	return nil
 }
 
 // startAcceptedLoop sets up required state and starts a goroutine with the
 // main loop for accepted connections.
+//
+// startAcceptedLoop 设置所需状态，并启动一个主循环的 goroutine ，用于接受连接。
+//
 func (e *endpoint) startAcceptedLoop(waiterQueue *waiter.Queue) {
 	e.waiterQueue = waiterQueue
 	e.workerRunning = true
@@ -1978,22 +2027,27 @@ func (e *endpoint) startAcceptedLoop(waiterQueue *waiter.Queue) {
 // Accept returns a new endpoint if a peer has established a connection
 // to an endpoint previously set to listen mode.
 func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	// Endpoint must be in listen state before it can accept connections.
+	// Endpoint 在接受连接前必须处于监听状态。
 	if e.state != StateListen {
 		return nil, nil, tcpip.ErrInvalidEndpointState
 	}
 
 	// Get the new accepted endpoint.
+	// 获取新的 accepted endpoint 。
 	var n *endpoint
 	select {
 	case n = <-e.acceptedChan:
 	default:
+		// 注意这里，当没有新的连接时，不是一直阻塞，而是立即返回一个 ‘暂不可用’ 的错误。
 		return nil, nil, tcpip.ErrWouldBlock
 	}
 
+	//
 	return n, n.waiterQueue, nil
 }
 
@@ -2194,18 +2248,21 @@ func (e *endpoint) readyToRead(s *segment) {
 // receiveBufferAvailableLocked calculates how many bytes are still available
 // in the receive buffer.
 // rcvListMu must be held when this function is called.
+//
+// receiveBufferAvailableLocked 计算接收缓冲区中还有多少字节可用。
+//
 func (e *endpoint) receiveBufferAvailableLocked() int {
-	// We may use more bytes than the buffer size when the receive buffer
-	// shrinks.
+	// We may use more bytes than the buffer size when the receive buffer shrinks.
+	// 当接收缓冲区 rcvBuf 收缩时，我们可能会使用了超过缓冲区大小的字节，此时返回 0 ，即无可用字节。
 	if e.rcvBufUsed >= e.rcvBufSize {
 		return 0
 	}
-
+	// 计算接收缓冲区中还有多少字节可用。
 	return e.rcvBufSize - e.rcvBufUsed
 }
 
-// receiveBufferAvailable calculates how many bytes are still available in the
-// receive buffer.
+// receiveBufferAvailable calculates how many bytes are still available in the receive buffer.
+// receiveBufferAvailable 计算接收缓冲区中还有多少字节可用。
 func (e *endpoint) receiveBufferAvailable() int {
 	e.rcvListMu.Lock()
 	available := e.receiveBufferAvailableLocked()

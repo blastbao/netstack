@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip"
 )
 
 // TestNDPNeighborSolicit tests the functions of NDPNeighborSolicit.

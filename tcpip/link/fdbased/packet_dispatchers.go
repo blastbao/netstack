@@ -19,11 +19,11 @@ package fdbased
 import (
 	"syscall"
 
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/link/rawfile"
-	"github.com/google/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/link/rawfile"
+	"github.com/blastbao/netstack/tcpip/stack"
 )
 
 // BufConfig defines the shape of the vectorised view used to read packets from the NIC.

@@ -25,15 +25,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/google/netstack/rand"
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/iptables"
-	"github.com/google/netstack/tcpip/ports"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/rand"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/iptables"
+	"github.com/blastbao/netstack/tcpip/ports"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/waiter"
 	"golang.org/x/time/rate"
 )
 
@@ -352,8 +352,7 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 	return atomic.AddUint64((*uint64)(u), 1)
 }
 
-// Stack is a networking stack, with all supported protocols, NICs, and route
-// table.
+// Stack is a networking stack, with all supported protocols, NICs, and route table.
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
@@ -993,51 +992,86 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return tcpip.AddressWithPrefix{}, nil
 }
 
+//
+
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
+
 	if len(localAddr) == 0 {
 		return nic.primaryEndpoint(netProto)
 	}
+
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
 // FindRoute creates a route to the given destination address, leaving through
 // the given nic and local address (if provided).
 func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (Route, *tcpip.Error) {
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// 判断数据的传递方式: 1.广播 2.多播 3.单播
 	isBroadcast := remoteAddr == header.IPv4Broadcast
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
+
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok {
+
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-				return makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback), nil
+				return makeRoute(
+					netProto,
+					ref.ep.ID().LocalAddress,
+					remoteAddr,
+					nic.linkEP.LinkAddress(),
+					ref,
+					s.handleLocal && !nic.loopback,
+					multicastLoop && !nic.loopback,
+				), nil
 			}
 		}
 	} else {
+
+		// 遍历路由表
 		for _, route := range s.routeTable {
+			// 不匹配：若网卡不匹配，或目标地址不匹配，则跳过当前表项
 			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr)) {
 				continue
 			}
+
+			// 匹配：取出网卡信息，
 			if nic, ok := s.nics[route.NIC]; ok {
+
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+
 					if len(remoteAddr) == 0 {
-						// If no remote address was provided, then the route
-						// provided will refer to the link local address.
+						// If no remote address was provided,
+						// then the route provided will refer to the link local address.
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
-					r := makeRoute(netProto, ref.ep.ID().LocalAddress, remoteAddr, nic.linkEP.LinkAddress(), ref, s.handleLocal && !nic.loopback, multicastLoop && !nic.loopback)
+					r := makeRoute(
+						netProto,                       // 网络协议
+						ref.ep.ID().LocalAddress,       // 本地 ip 地址
+						remoteAddr,                     // 远端 ip 地址
+						nic.linkEP.LinkAddress(),       // 本地 mac 地址
+						ref,                            // 远端 endpoint
+						s.handleLocal && !nic.loopback, // 回环
+						multicastLoop && !nic.loopback, // 回环
+					)
+
+					// 设置下一跳为网关 ip 地址
 					if needRoute {
 						r.NextHop = route.Gateway
 					}
+
 					return r, nil
 				}
 			}
 		}
 	}
 
+	//
 	if !needRoute {
 		return Route{}, tcpip.ErrNetworkUnreachable
 	}

@@ -19,28 +19,32 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/netstack/rand"
-	"github.com/google/netstack/sleep"
-	"github.com/google/netstack/tcpip"
-	"github.com/google/netstack/tcpip/buffer"
-	"github.com/google/netstack/tcpip/hash/jenkins"
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
-	"github.com/google/netstack/tcpip/stack"
-	"github.com/google/netstack/waiter"
+	"github.com/blastbao/netstack/rand"
+	"github.com/blastbao/netstack/sleep"
+	"github.com/blastbao/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip/buffer"
+	"github.com/blastbao/netstack/tcpip/hash/jenkins"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/stack"
+	"github.com/blastbao/netstack/waiter"
 )
 
 // maxSegmentsPerWake is the maximum number of segments to process in the main
 // protocol goroutine per wake-up. Yielding [after this number of segments are
 // processed] allows other events to be processed as well (e.g., timeouts,
 // resets, etc.).
+//
+// maxSegmentsPerWake 是主协程每次唤醒时要处理的最大段数。在这些段处理完后，允许处理其他事件（如超时、复位等）。
 const maxSegmentsPerWake = 100
 
 type handshakeState int
 
-// The following are the possible states of the TCP connection during a 3-way
-// handshake. A depiction of the states and transitions can be found in RFC 793,
-// page 23.
+// The following are the possible states of the TCP connection during a 3-way handshake.
+// A depiction of the states and transitions can be found in RFC 793, page 23.
+//
+// 以下是 TCP 连接在 3 路握手过程中可能出现的状态。
+// 这些状态和转换的描述可以在 RFC 793 中找到，第23页。
 const (
 	handshakeSynSent handshakeState = iota
 	handshakeSynRcvd
@@ -62,42 +66,67 @@ const (
 
 // handshake holds the state used during a TCP 3-way handshake.
 type handshake struct {
+
+	// 对端
 	ep     *endpoint
+
+	// 握手状态
 	state  handshakeState
+
+	//
 	active bool
+
+	//
 	flags  uint8
+
+	//
 	ackNum seqnum.Value
 
 	// iss is the initial send sequence number, as defined in RFC 793.
+	// iss 初始发送序列号，定义在 RFC 793 中。
 	iss seqnum.Value
 
 	// rcvWnd is the receive window, as defined in RFC 793.
+	// rcvWnd 接收窗口，定义在 RFC 793 中。
 	rcvWnd seqnum.Size
 
 	// sndWnd is the send window, as defined in RFC 793.
+	// sndWnd 发送窗口，定义在 RFC 793 中。
 	sndWnd seqnum.Size
 
 	// mss is the maximum segment size received from the peer.
+	// mss 从对端收到的最大报文段大小。
 	mss uint16
+
 
 	// sndWndScale is the send window scale, as defined in RFC 1323. A
 	// negative value means no scaling is supported by the peer.
+	//
+	// 对端接收窗口扩大因子。负值表示对端不支持扩大。
 	sndWndScale int
 
+
 	// rcvWndScale is the receive window scale, as defined in RFC 1323.
+	//
+	// 本端接收窗口扩大因子
 	rcvWndScale int
 }
 
 func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
+
 	rcvWndScale := ep.rcvWndScaleForHandshake()
 
 	// Round-down the rcvWnd to a multiple of wndScale. This ensures that the
 	// window offered in SYN won't be reduced due to the loss of precision if
 	// window scaling is enabled after the handshake.
+	//
+	// 将 rcvWnd 四舍五入到 wndScale 的倍数。
 	rcvWnd = (rcvWnd >> uint8(rcvWndScale)) << uint8(rcvWndScale)
 
 	// Ensure we can always accept at least 1 byte if the scale specified
 	// was too high for the provided rcvWnd.
+	//
+	// 如果 rcvWndScale 相比 rcvWnd 来说太高，则需要设置至少1个字节。
 	if rcvWnd == 0 {
 		rcvWnd = 1
 	}
@@ -108,13 +137,14 @@ func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
 		rcvWnd:      rcvWnd,
 		rcvWndScale: int(rcvWndScale),
 	}
+
 	h.resetState()
 	return h
 }
 
-// FindWndScale determines the window scale to use for the given maximum window
-// size.
+// FindWndScale determines the window scale to use for the given maximum window size.
 func FindWndScale(wnd seqnum.Size) int {
+
 	if wnd < 0x10000 {
 		return 0
 	}
@@ -132,6 +162,8 @@ func FindWndScale(wnd seqnum.Size) int {
 // resetState resets the state of the handshake object such that it becomes
 // ready for a new 3-way handshake.
 func (h *handshake) resetState() {
+
+	// 读取四字节随机数
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
@@ -147,6 +179,10 @@ func (h *handshake) resetState() {
 // generateSecureISN generates a secure Initial Sequence number based on the
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
 func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
+
+	// isn = hash(seed + LocalAddress + RemoteAddress + LocalPort + RemotePort) + time.NowInMs
+
+
 	isnHasher := jenkins.Sum32(seed)
 	isnHasher.Write([]byte(id.LocalAddress))
 	isnHasher.Write([]byte(id.RemoteAddress))
@@ -173,15 +209,17 @@ func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
 // If the peer doesn't support window scaling, the effective rcv wnd scale is
 // zero; otherwise it's the value calculated based on the initial rcv wnd.
 func (h *handshake) effectiveRcvWndScale() uint8 {
+	// 如果对端接收窗口扩大因子为负数，则不支持窗口扩大。
 	if h.sndWndScale < 0 {
 		return 0
 	}
 	return uint8(h.rcvWndScale)
 }
 
-// resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
-// state.
+// resetToSynRcvd resets the state of the handshake object to the SYN-RCVD state.
+// resetToSynRcvd 将 handshake 对象的 state 重置为 SYN-RCVD 状态。
 func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions) {
+
 	h.active = false
 	h.state = handshakeSynRcvd
 	h.flags = header.TCPFlagSyn | header.TCPFlagAck
@@ -195,9 +233,12 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 }
 
 // checkAck checks if the ACK number, if present, of a segment received during
-// a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in
-// response.
+// a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in response.
+//
+// checkAck 检查在 TCP 三次握手过程中收到的段的 ACK 号（如果存在）是否有效。如果无效，则会发回一个 RST 段作为回应。
+
 func (h *handshake) checkAck(s *segment) bool {
+
 	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
 		// RFC 793, page 36, states that a reset must be generated when
 		// the connection is in any non-synchronized state and an
@@ -211,11 +252,13 @@ func (h *handshake) checkAck(s *segment) bool {
 	return true
 }
 
-// synSentState handles a segment received when the TCP 3-way handshake is in
-// the SYN-SENT state.
+// synSentState handles a segment received when the TCP 3-way handshake is in the SYN-SENT state.
+//
+// synSentState 处理 TCP 三次握手过程中，处于 SYN-SENT 状态时收到的段。
 func (h *handshake) synSentState(s *segment) *tcpip.Error {
-	// RFC 793, page 37, states that in the SYN-SENT state, a reset is
-	// acceptable if the ack field acknowledges the SYN.
+
+	// RFC 793, page 37, states that in the SYN-SENT state,
+	// a reset is acceptable if the ack field acknowledges the SYN.
 	if s.flagIsSet(header.TCPFlagRst) {
 		if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
 			return tcpip.ErrConnectionRefused
@@ -237,7 +280,7 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	rcvSynOpts := parseSynSegmentOptions(s)
 
 	// Remember if the Timestamp option was negotiated.
-	h.ep.maybeEnableTimestamp(&rcvSynOpts)
+	h.ep.maybeEnableTimestamp(&rcvSynOpts) // 设置是否允许时间戳选项
 
 	// Remember if the SACKPermitted option was negotiated.
 	h.ep.maybeEnableSACKPermitted(&rcvSynOpts)
@@ -248,17 +291,22 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	h.mss = rcvSynOpts.MSS
 	h.sndWndScale = rcvSynOpts.WS
 
-	// If this is a SYN ACK response, we only need to acknowledge the SYN
-	// and the handshake is completed.
+	// If this is a SYN ACK response, we only need to acknowledge the SYN and the handshake is completed.
+	//
+	// 发出 SYN 后收到了 SYN + ACK，再发送一个 ACK，连接就完成建立了。
 	if s.flagIsSet(header.TCPFlagAck) {
 		h.state = handshakeCompleted
 		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
 		return nil
 	}
 
+	// 以下这一端对应的是状态机那张图里的 ‘同时连接’ 的情况，
+	// 此时作为主动方已经发出了一个 SYN，然后又收到了一个 SYN，此时只要发送一个 SYN + ACK，
+	// 对于对方来说这个连接就已经建立了，对于自己来说，再收到一个 SYN + ACK 也算完成连接。
+
 	// A SYN segment was received, but no ACK in it. We acknowledge the SYN
-	// but resend our own SYN and wait for it to be acknowledged in the
-	// SYN-RCVD state.
+	// but resend our own SYN and wait for it to be acknowledged in the SYN-RCVD state.
+
 	h.state = handshakeSynRcvd
 	h.ep.mu.Lock()
 	h.ep.state = StateSynRecv
@@ -283,9 +331,22 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	return nil
 }
 
-// synRcvdState handles a segment received when the TCP 3-way handshake is in
-// the SYN-RCVD state.
+// synRcvdState handles a segment received when the TCP 3-way handshake is in the SYN-RCVD state.
+// synRcvdState 处理 TCP 三次握手过程中，处于 SYN-RCVD 状态时收到的段。
 func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
+
+	// 先判断是否是一个 RST 包，用来异常的关闭连接。
+	//
+	// 那么哪些情况会导致 RST 呢？
+	// • 目标端口未监听
+	// • 目的主机或网络路径中防火墙拦截
+	// • 在 recvQueue 中缓存，但是未被应用就断开连接
+	// • 向已经关闭的 Socket 发送数据
+	// • 向已经关闭的 Socket 发送 FIN
+	// • 向已经断开的连接发送数据
+	// • 向半打开的连接中进行 Send 操作
+	// • ...
+	//
 	if s.flagIsSet(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
 		// is acceptable if the sequence number is in the window.
@@ -295,11 +356,17 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		return nil
 	}
 
+	// 判断 Segment 是 Syn 还是 Ack。
 	if !h.checkAck(s) {
 		return nil
 	}
 
+	//
 	if s.flagIsSet(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
+
+		// 之前已经收到过了一个 SYN，然后又收到了一个 SYN，并且两次 seq 不同，那么认为对方抽风，发送 RST 关闭连接。
+
+
 		// We received two SYN segments with different sequence
 		// numbers, so we reset this and restart the whole
 		// process, except that we don't reset the timer.
@@ -323,6 +390,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 			SACKPermitted: h.ep.sackPermitted,
 			MSS:           h.ep.amss,
 		}
+
 		h.ep.sendSynTCP(&s.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 		return nil
 	}
@@ -330,6 +398,9 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 	// We have previously received (and acknowledged) the peer's SYN. If the
 	// peer acknowledges our SYN, the handshake is completed.
 	if s.flagIsSet(header.TCPFlagAck) {
+
+		// 如果之前协商好了要带上 timeStamp 选项，但是握手第三步没有带上时间戳，那么丢弃这个 ACK 数据包。
+
 		// If the timestamp option is negotiated and the segment does
 		// not carry a timestamp option then the segment must be dropped
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.
@@ -339,6 +410,8 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		}
 
 		// Update timestamp if required. See RFC7323, section-4.3.
+		//
+		// 更新时间戳
 		if h.ep.sendTSOk && s.parsedOptions.TS {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
@@ -350,11 +423,13 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 }
 
 func (h *handshake) handleSegment(s *segment) *tcpip.Error {
+	// 对 SendWindow 进行拓展
 	h.sndWnd = s.window
 	if !s.flagIsSet(header.TCPFlagSyn) && h.sndWndScale > 0 {
 		h.sndWnd <<= uint8(h.sndWndScale)
 	}
 
+	//
 	switch h.state {
 	case handshakeSynRcvd:
 		return h.synRcvdState(s)
@@ -367,21 +442,26 @@ func (h *handshake) handleSegment(s *segment) *tcpip.Error {
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
 func (h *handshake) processSegments() *tcpip.Error {
+
+
+	// 每次最多处理 maxSegmentsPerWake 默认 100 个 segment 。
 	for i := 0; i < maxSegmentsPerWake; i++ {
+		// 取出 segment
 		s := h.ep.segmentQueue.dequeue()
 		if s == nil {
 			return nil
 		}
-
+		// 处理 segment
 		err := h.handleSegment(s)
 		s.decRef()
 		if err != nil {
 			return err
 		}
-
 		// We stop processing packets once the handshake is completed,
 		// otherwise we may process packets meant to be processed by
 		// the main protocol goroutine.
+		//
+		// 当握手完成时，就停止处理数据包，否则可能会处理本应由主协程负责处理的数据包。
 		if h.state == handshakeCompleted {
 			break
 		}
@@ -438,7 +518,12 @@ func (h *handshake) resolveRoute() *tcpip.Error {
 }
 
 // execute executes the TCP 3-way handshake.
+//
+// 不管是客户端还是服务器，三步握手的处理方式都是在同一个函数中。
+//
 func (h *handshake) execute() *tcpip.Error {
+
+	//
 	if h.ep.route.IsResolutionRequired() {
 		if err := h.resolveRoute(); err != nil {
 			return err
@@ -446,34 +531,41 @@ func (h *handshake) execute() *tcpip.Error {
 	}
 
 	// Initialize the resend timer.
+	// 设置重传的 Waker ，并将 RTO 初始值设置为 1s 。
 	resendWaker := sleep.Waker{}
-	timeOut := time.Duration(time.Second)
+	timeOut := time.Duration(time.Second) 	// 设置初始 RTO 为 1s
 	rt := time.AfterFunc(timeOut, func() {
-		resendWaker.Assert()
+		resendWaker.Assert() 				// RTO 后触发超时重传
 	})
 	defer rt.Stop()
 
 	// Set up the wakers.
+	//
+	// 把 Waker 注册进 Sleeper
 	s := sleep.Sleeper{}
 	s.AddWaker(&resendWaker, wakerForResend)
 	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
 	s.AddWaker(&h.ep.newSegmentWaker, wakerForNewSegment)
 	defer s.Done()
 
+	// 是否需要协商 SACK
 	var sackEnabled SACKEnabled
 	if err := h.ep.stack.TransportProtocolOption(ProtocolNumber, &sackEnabled); err != nil {
 		// If stack returned an error when checking for SACKEnabled
 		// status then just default to switching off SACK negotiation.
+		//
+		// 如果协议栈在检查 SACKEnabled 状态时返回错误，就默认关闭 SACK 协商。
 		sackEnabled = false
 	}
 
-	// Send the initial SYN segment and loop until the handshake is
-	// completed.
+	// Send the initial SYN segment and loop until the handshake is completed.
+	// 发送初始 SYN 段并循环直到完成握手
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 
+	// 设置 Syn 握手选项
 	synOpts := header.TCPSynOptions{
-		WS:            h.rcvWndScale,
-		TS:            true,
+		WS:            h.rcvWndScale,		// 设置自己这一端的 wndScale
+		TS:            true, 				//
 		TSVal:         h.ep.timestamp(),
 		TSEcr:         h.ep.recentTS,
 		SACKPermitted: bool(sackEnabled),
@@ -481,34 +573,68 @@ func (h *handshake) execute() *tcpip.Error {
 	}
 
 	// Execute is also called in a listen context so we want to make sure we
-	// only send the TS/SACK option when we received the TS/SACK in the
-	// initial SYN.
+	// only send the TS/SACK option when we received the TS/SACK in the initial SYN.
+	//
+	// Execute 也是在监听上下文中调用的，要确保在 init SYN 中存在 TS/SACK 时才发送 TS/SACK 选项。
+
+	// SynRcvd 这个状态是 Server 才有的，说明当前是由 Listen 调用的被动连接，而非由 Connect 发起的主动连接，
+	// 此时，由对方决定是否使用 TS、SACK、sndWndScale 选项 。
 	if h.state == handshakeSynRcvd {
 		synOpts.TS = h.ep.sendTSOk
 		synOpts.SACKPermitted = h.ep.sackPermitted && bool(sackEnabled)
 		if h.sndWndScale < 0 {
-			// Disable window scaling if the peer did not send us
-			// the window scaling option.
+			// Disable window scaling if the peer did not send us the window scaling option.
+			// 如果对端没有向我们发送窗口缩放选项，则禁用窗口缩放。
 			synOpts.WS = -1
 		}
 	}
-	h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 
+	h.ep.sendSynTCP(
+		&h.ep.route,
+		h.ep.ID,
+		h.ep.ttl,			// ttl
+		h.ep.sendTOS,		//
+		h.flags,			// 标识位
+		h.iss, 				// seq 初始序号
+		h.ackNum,			// ack 序号，如果是主动发起连接，该值为 0，相反，则值为 irs + 1
+		h.rcvWnd,			// 接收窗口
+		synOpts,            // 附加选项
+	)
+
+	// 检查状态
 	for h.state != handshakeCompleted {
+
 		switch index, _ := s.Fetch(true); index {
+
+		// 超时重传
 		case wakerForResend:
+			// 超时后，等待时间会翻倍（指数退避），最大为 60s
 			timeOut *= 2
 			if timeOut > 60*time.Second {
 				return tcpip.ErrTimeout
 			}
 			rt.Reset(timeOut)
+			// 重传
 			h.ep.sendSynTCP(&h.ep.route, h.ep.ID, h.ep.ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 
+		// Notification 分两种：
+		//	第一种是 Close，也就是直接关闭；
+		//	另一种是 Drain，这是什么呢？
+		//
+		// 当收到这个 Drain 通知的时候，该节点会逐渐的清空自己的 segmentQueue（也就是半连接队列），直至将等待队列清空。
+		//
+		// 到这里有没有想到什么？
+		// 其实这里就是在做拥塞控制，而且这只是在握手的时候。
+		//
+		// 但是为什么要这里做一个拥塞控制呢？
+		// 我认为这里主要是为了 Server 的安全，因为这里可能存在 Client 疯狂发送 Syn，但是不回应的情况，所以在这里就要来这么一手。
 		case wakerForNotification:
 			n := h.ep.fetchNotifications()
+			// 如果收到关闭信号
 			if n&notifyClose != 0 {
 				return tcpip.ErrAborted
 			}
+			// 如果需要 BBR 缓解拥塞
 			if n&notifyDrain != 0 {
 				for !h.ep.segmentQueue.empty() {
 					s := h.ep.segmentQueue.dequeue()
@@ -525,11 +651,14 @@ func (h *handshake) execute() *tcpip.Error {
 				<-h.ep.undrain
 			}
 
+		// 等待并处理新的 SYN 数据包或握手第三步的 ACK
 		case wakerForNewSegment:
+
 			if err := h.processSegments(); err != nil {
 				return err
 			}
 		}
+
 	}
 
 	return nil
@@ -1083,13 +1212,18 @@ func (e *endpoint) disableKeepaliveTimer() {
 }
 
 // protocolMainLoop is the main loop of the TCP protocol. It runs in its own
-// goroutine and is responsible for sending segments and handling received
-// segments.
+// goroutine and is responsible for sending segments and handling received segments.
+//
+//
+// 主要是注册一些回调，添加到 sleeper 的 waker 里，然后进入循环，Fetch 拿到触发了的事件，然后执行这些事件对应的回调。
+
 func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
+
 	var closeTimer *time.Timer
 	var closeWaker sleep.Waker
 
 	epilogue := func() {
+
 		// e.mu is expected to be hold upon entering this section.
 
 		if e.snd != nil {
@@ -1110,6 +1244,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		// When the protocol loop exits we should wake up our waiters.
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
 	}
+
 
 	if handshake {
 		// This is an active connection, so we must initiate the 3-way
@@ -1382,8 +1517,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	return nil
 }
 
-// handleTimeWaitSegments processes segments received during TIME_WAIT
-// state.
+
+
+// handleTimeWaitSegments processes segments received during TIME_WAIT state.
 func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
 	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {

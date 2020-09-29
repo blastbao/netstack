@@ -18,7 +18,7 @@ import (
 	"encoding/binary"
 	"strings"
 
-	"github.com/google/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip"
 )
 
 const (

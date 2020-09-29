@@ -8,12 +8,16 @@ package packet
 // Element are the same type.
 type packetElementMapper struct{}
 
+
 // linkerFor maps an Element to a Linker.
 //
 // This default implementation should be inlined.
 //
 //go:nosplit
-func (packetElementMapper) linkerFor(elem *packet) *packet { return elem }
+func (packetElementMapper) linkerFor(elem *packet) *packet {
+	return elem
+}
+
 
 // List is an intrusive list. Entries can be added to or removed from the list
 // in O(1) time and with no additional memory allocations.

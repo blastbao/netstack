@@ -18,8 +18,8 @@
 package tcpconntrack
 
 import (
-	"github.com/google/netstack/tcpip/header"
-	"github.com/google/netstack/tcpip/seqnum"
+	"github.com/blastbao/netstack/tcpip/header"
+	"github.com/blastbao/netstack/tcpip/seqnum"
 )
 
 // Result is returned when the state of a TCB is updated in response to an

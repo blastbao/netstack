@@ -15,16 +15,24 @@
 package header
 
 import (
-	"github.com/google/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip"
 )
 
 const (
+
 	// MaxIPPacketSize is the maximum supported IP packet size, excluding
 	// jumbograms. The maximum IPv4 packet size is 64k-1 (total size must fit
 	// in 16 bits). For IPv6, the payload max size (excluding jumbograms) is
 	// 64k-1 (also needs to fit in 16 bits). So we use 64k - 1 + 2 * m, where
 	// m is the minimum IPv6 header size; we leave room for some potential
 	// IP options.
+	//
+	// MaxIPPacketSize 是支持的最大 IP 数据包大小，不包括 jumbograms (巨型数据报)。
+	// (1) 对于 IPv4 ，最大的数据包大小是 64k-1（包长度字段为16 bit )
+	// (2) 对于 IPv6 ，有效载荷的最大大小为 64k-1（包长度字段为16 bit ）。
+	// 所以我们使用 64k - 1 + 2 * m，其中 m 是最小的 IPv6 报头大小 。
+	//
+	//
 	MaxIPPacketSize = 0xffff + 2*IPv6MinimumSize
 )
 

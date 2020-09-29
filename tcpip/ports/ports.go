@@ -21,7 +21,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/google/netstack/tcpip"
+	"github.com/blastbao/netstack/tcpip"
 )
 
 const (
@@ -174,6 +174,7 @@ func (s *PortManager) PickEphemeralPortStable(offset uint32, testPort func(p uin
 // caller to decide whether a given port is suitable for its needs, and stopping
 // when a port is found or an error occurs.
 func (s *PortManager) pickEphemeralPort(offset, count uint32, testPort func(p uint16) (bool, *tcpip.Error)) (port uint16, err *tcpip.Error) {
+
 	for i := uint32(0); i < count; i++ {
 		port = uint16(FirstEphemeral + (offset+i)%count)
 		ok, err := testPort(port)

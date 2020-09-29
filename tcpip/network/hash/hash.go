@@ -18,8 +18,8 @@ package hash
 import (
 	"encoding/binary"
 
-	"github.com/google/netstack/rand"
-	"github.com/google/netstack/tcpip/header"
+	"github.com/blastbao/netstack/rand"
+	"github.com/blastbao/netstack/tcpip/header"
 )
 
 var hashIV = RandN32(1)[0]
@@ -66,6 +66,10 @@ func Hash3Words(a, b, c, initval uint32) uint32 {
 }
 
 // IPv4FragmentHash computes the hash of the IPv4 fragment as suggested in RFC 791.
+//
+// 怎么判断某些分片是属于同一个数据报的呢？
+// 这里对头部的一些特征值进行 hash 操作，所得结果当作这个数据报的 ID ，通过这个 ID，就可以找到已经到达的分片，并进行重组。
+// 计算分片哈希值：用到的特征值为 ID、协议号、源地址、目的地址、一个随机数。
 func IPv4FragmentHash(h header.IPv4) uint32 {
 	x := uint32(h.ID())<<16 | uint32(h.Protocol())
 	t := h.SourceAddress()
