@@ -170,6 +170,8 @@ type sender struct {
 
 	// sndWndScale is the number of bits to shift left when reading the send
 	// window size from a segment.
+	//
+	// 对端接收窗口扩大因子
 	sndWndScale uint8
 
 	// maxSentAck is the maxium acknowledgement actually sent.

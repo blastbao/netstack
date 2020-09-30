@@ -326,8 +326,9 @@ func (l *listenContext) createConnectingEndpoint(
 func (l *listenContext) createEndpointAndPerformHandshake(s *segment, opts *header.TCPSynOptions) (*endpoint, *tcpip.Error) {
 
 	// Create new endpoint.
-	//
 	// 从 Listen Endpoint 创建一个 Handshake Endpoint ，让其负责连接建立。
+
+	//
 	irs := s.sequenceNumber
 	isn := generateSecureISN(s.id, l.stack.Seed())
 	ep, err := l.createConnectingEndpoint(s, isn, irs, opts)
