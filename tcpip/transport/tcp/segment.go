@@ -111,7 +111,7 @@ func newSegmentFromView(r *stack.Route, id stack.TransportEndpointID, v buffer.V
 		route:  r.Clone(),
 	}
 	s.views[0] = v
-	s.data = buffer.NewVectorisedView(len(v), s.views[:1])
+	s.data = buffer.NewVectorisedView(len(v), s.views[:1]) // 从 v 中拷贝数据到 s.data 里
 	s.rcvdTime = time.Now()
 	return s
 }

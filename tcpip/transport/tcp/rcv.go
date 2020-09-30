@@ -31,6 +31,7 @@ type receiver struct {
 
 	ep *endpoint
 
+	// 希望接收的下一个序列号
 	rcvNxt seqnum.Value
 
 	// rcvAcc is one beyond the last acceptable sequence number. That is,
@@ -39,16 +40,19 @@ type receiver struct {
 	// rcvNxt + rcvWnd if the receive window is reduced; in that case we
 	// have to reduce the window as we receive more data instead of
 	// shrinking it.
+	//
+	// rcvAcc 是最后一个可接受的序列号 +1 ，也就是接收者向其 peer 宣布的它愿意接受的 "最大 "序列值。
 	rcvAcc seqnum.Value
 
+
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
-	// 当前的本端接收窗口大小
+	// 当前接收窗口的大小
 	rcvWnd seqnum.Size
+
 	// 本端接收窗口扩大因子，大小是 8 bit，所以其值最大为 255 。
 	rcvWndScale uint8
 
 	closed bool
-
 
 	pendingRcvdSegments segmentHeap
 	pendingBufUsed      seqnum.Size
@@ -59,11 +63,11 @@ type receiver struct {
 func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8, pendingBufSize seqnum.Size) *receiver {
 	return &receiver{
 		ep:             ep,
-		rcvNxt:         irs + 1,
-		rcvAcc:         irs.Add(rcvWnd + 1),
-		rcvWnd:         rcvWnd,
-		rcvWndScale:    rcvWndScale,
-		pendingBufSize: pendingBufSize,
+		rcvNxt:         irs + 1,				// 希望接收的下个序号
+		rcvAcc:         irs.Add(rcvWnd + 1), 	// 所能接受的最大序号
+		rcvWnd:         rcvWnd, 				// 接收窗口
+		rcvWndScale:    rcvWndScale,			// 接收窗口扩大倍数
+		pendingBufSize: pendingBufSize,			//
 	}
 }
 
@@ -73,10 +77,12 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 //
 // tcp流量控制：判断 segSeq 在窗口內
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
+
 	rcvWnd := r.rcvNxt.Size(r.rcvAcc)
 	if rcvWnd == 0 {
 		return segLen == 0 && segSeq == r.rcvNxt
 	}
+
 	return segSeq.InWindow(r.rcvNxt, rcvWnd) || seqnum.Overlap(r.rcvNxt, rcvWnd, segSeq, segLen)
 }
 
@@ -361,15 +367,20 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	closed := r.ep.closed
 	r.ep.mu.RUnlock()
 
+	// 检查 e.state 是否是 "已经建立"
 	if state != StateEstablished {
+		//
 		drop, err := r.handleRcvdSegmentClosing(s, state, closed)
 		if drop || err != nil {
 			return drop, err
 		}
 	}
 
+	// 序列号
 	segSeq := s.sequenceNumber
+	// 段大小
 	segLen := seqnum.Size(s.data.Size())
+
 
 	// If the sequence number range is outside the acceptable range,
 	// just send an ACK and stop further processing of the segment.

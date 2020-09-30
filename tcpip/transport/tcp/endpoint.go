@@ -1028,7 +1028,6 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 // 接收上层的数据，通过 tcp 连接发送到对端
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 
-
 	// Linux completely ignores any address passed to sendto(2) for TCP sockets
 	// (without the MSG_FASTOPEN flag). Corking is unimplemented, so opts.More
 	// and opts.EndOfRecord are also ignored.
@@ -1100,9 +1099,9 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 	// Add data to the send queue.
-	s := newSegmentFromView(&e.route, e.ID, v) 	// 把整块的数据根据当前窗口大小切出一个包，也就是说数据在此之前是‘流式’的
+	s := newSegmentFromView(&e.route, e.ID, v) 	// 构造一个待写入的 segment
 	e.sndBufUsed += len(v)						// 发送缓冲区 + len(v)
-	e.sndBufInQueue += seqnum.Size(len(v))		//
+	e.sndBufInQueue += seqnum.Size(len(v))		// 发送缓冲区 + len(v)
 	e.sndQueue.PushBack(s)  					// 把数据包存入 e.sndQueue 链表里
 	e.sndBufMu.Unlock()
 
@@ -2096,9 +2095,8 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// Don't allow binding once endpoint is not in the initial state
-	// anymore. This is because once the endpoint goes into a connected or
-	// listen state, it is already bound.
+	// Don't allow binding once endpoint is not in the initial state anymore.
+	// This is because once the endpoint goes into a connected or listen state, it is already bound.
 	if e.state != StateInitial {
 		return tcpip.ErrAlreadyBound
 	}
@@ -2109,9 +2107,9 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 		return err
 	}
 
-	// Expand netProtos to include v4 and v6 if the caller is binding to a
-	// wildcard (empty) address, and this is an IPv6 endpoint with v6only
-	// set to false.
+
+	// Expand netProtos to include v4 and v6 if the caller is binding to a wildcard (empty) address,
+	// and this is an IPv6 endpoint with v6only set to false.
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
 	if netProto == header.IPv6ProtocolNumber && !e.v6only && addr.Addr == "" {
 		netProtos = []tcpip.NetworkProtocolNumber{
@@ -2141,8 +2139,8 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
 		}
 	}(e.bindToDevice)
 
-	// If an address is specified, we must ensure that it's one of our
-	// local addresses.
+
+	// If an address is specified, we must ensure that it's one of our local addresses.
 	if len(addr.Addr) != 0 {
 		nic := e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nic == 0 {
@@ -2257,15 +2255,21 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 	}
 }
 
-// updateSndBufferUsage is called by the protocol goroutine when room opens up
-// in the send buffer. The number of newly available bytes is v.
+
+
+// updateSndBufferUsage is called by the protocol goroutine when room opens up in the send buffer.
+// The number of newly available bytes is v.
+//
+// updateSndBufferUsage 是由协议 goroutine 在发送缓冲区有空闲时调用的，新的可用字节数为 v 。
 func (e *endpoint) updateSndBufferUsage(v int) {
+
 	e.sndBufMu.Lock()
 	notify := e.sndBufUsed >= e.sndBufSize>>1
 	e.sndBufUsed -= v
-	// We only notify when there is half the sndBufSize available after
-	// a full buffer event occurs. This ensures that we don't wake up
-	// writers to queue just 1-2 segments and go back to sleep.
+
+	// We only notify when there is half the sndBufSize available after a full buffer event occurs.
+	// This ensures that we don't wake up writers to queue just 1-2 segments and go back to sleep.
+	//
 	notify = notify && e.sndBufUsed < e.sndBufSize>>1
 	e.sndBufMu.Unlock()
 
@@ -2274,9 +2278,11 @@ func (e *endpoint) updateSndBufferUsage(v int) {
 	}
 }
 
-// readyToRead is called by the protocol goroutine when a new segment is ready
-// to be read, or when the connection is closed for receiving (in which case
-// s will be nil).
+// readyToRead is called by the protocol goroutine when a new segment is ready to be read,
+// or when the connection is closed for receiving (in which case s will be nil).
+//
+// readyToRead 被协议 goroutine 调用，当一个新的段准备好被读取，或者当连接被关闭接收时（在这种情况下，s 将是 nil ）。
+//
 func (e *endpoint) readyToRead(s *segment) {
 	e.rcvListMu.Lock()
 	if s != nil {

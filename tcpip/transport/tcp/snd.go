@@ -114,17 +114,32 @@ type sender struct {
 	// that have been sent but not yet acknowledged.
 	outstanding int
 
+
+
+
+	//						 +-------> sndWnd <-------+
+	//						 |                        |
+	//	---------------------+-------------+----------+--------------------
+	//	|      acked         | * * * * * * | # # # # #|   unable send
+	//	---------------------+-------------+----------+--------------------
+	//						 ^             ^
+	//						 |             |
+	// 					   sndUna        sndNxt
+
+
 	// sndWnd is the send window size.
+	// sndWnd 是接受端通告的窗口大小。
 	sndWnd seqnum.Size
 
 	// sndUna is the next unacknowledged sequence number.
+	// sndUna 表示是下一个未确认的序列号。
 	sndUna seqnum.Value
 
 	// sndNxt is the sequence number of the next segment to be sent.
+	// sndNxt 是要发送的下一个段的序列号。
 	sndNxt seqnum.Value
 
-	// sndNxtList is the sequence number of the next segment to be added to
-	// the send list.
+	// sndNxtList is the sequence number of the next segment to be added to the send list.
 	sndNxtList seqnum.Value
 
 	// rttMeasureSeqNum is the sequence number being used for the latest RTT
@@ -786,13 +801,16 @@ func (s *sender) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool)
 	return dataSent
 }
 
-// sendData sends new data segments. It is called when data becomes available or
-// when the send window opens up.
+// sendData sends new data segments.
+// It is called when data becomes available or when the send window opens up.
 func (s *sender) sendData() {
+
+
 	limit := s.maxPayloadSize
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
 	}
+
 	end := s.sndUna.Add(s.sndWnd)
 
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
@@ -838,6 +856,7 @@ func (s *sender) sendData() {
 	if !s.resendTimer.enabled() && s.sndUna != s.sndNxt {
 		s.resendTimer.enable(s.rto)
 	}
+
 	// If we have no more pending data, start the keepalive timer.
 	if s.sndUna == s.sndNxt {
 		s.ep.resetKeepaliveTimer(false)
@@ -1085,13 +1104,21 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 统计重复的数据，如果需要的话进行快速重传。
 	rtx := s.checkDuplicateAck(seg)
 
+
+	// [重要]
+	// 首先要处理接收方的窗口通告，当收到报文时，一定会带有接收窗口 seg.window 和确认号 seg.ackNumber ，
+	// 此时先更新发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
+
 	// Stash away the current window size.
-	// 收起当前的窗口大小。
+	// 设置发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
 	s.sndWnd = seg.window
 
 	// Ignore ack if it doesn't acknowledge any new data.
 	// 如果它不应答任何新数据，就忽略 ACK 。
+
+	// 获取确认号
 	ack := seg.ackNumber
+	// 如果 ack 在最小未确认的 seq 和下一 seg 的 seq 之间
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
 
 		s.dupAckCount = 0

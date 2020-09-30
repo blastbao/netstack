@@ -181,8 +181,6 @@ func (h *handshake) resetState() {
 func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
 
 	// isn = hash(seed + LocalAddress + RemoteAddress + LocalPort + RemotePort) + time.NowInMs
-
-
 	isnHasher := jenkins.Sum32(seed)
 	isnHasher.Write([]byte(id.LocalAddress))
 	isnHasher.Write([]byte(id.RemoteAddress))
@@ -928,6 +926,7 @@ func (e *endpoint) handleWrite() *tcpip.Error {
 	// 发送队列 e.sendQueue 可以被多个 goroutine 并发访问，所以要受 e.sndBufMu 保护。
 	// 发送列表 e.snd.writeList 只能从 handleWrite() 中访问，调用 handleWrite() 时已经加了锁，
 	// 所以 e.snd.writeList 只能被一个 goroutine 操作，不需要再加锁。
+	//
 	e.sndBufMu.Lock()
 	first := e.sndQueue.Front()
 	if first != nil {
@@ -938,11 +937,13 @@ func (e *endpoint) handleWrite() *tcpip.Error {
 	e.sndBufMu.Unlock()
 
 	// Initialize the next segment to write if it's currently nil.
+	// 如果当前 e.snd.writeNext  为 nil ，则初始化为下一个将要写的段，即 first 。
 	if e.snd.writeNext == nil {
 		e.snd.writeNext = first
 	}
 
 	// Push out any new packets.
+	// 推送出任何新的数据包。
 	e.snd.sendData()
 
 	return nil
