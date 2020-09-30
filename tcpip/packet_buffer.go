@@ -24,13 +24,13 @@ import "github.com/blastbao/netstack/tcpip/buffer"
 // multiple endpoints. Clone() should be called in such cases so that
 // modifications to the Data field do not affect other copies.
 //
-// PacketBuffer 中包含了一个网络包的所有数据。当一个 PacketBuffer 在协议栈中遍历时，
-// 可能需要将它传递给多个端点，在这种情况下，应该调用 Clone() ，这样对 Data 字段的修改不
-// 会影响其他副本。
+// PacketBuffer 中包含了一个网络包的所有数据。
+//
+// 当一个 PacketBuffer 在协议栈中遍历时，可能需要将它传递给多个端点，
+// 在这种情况下，应该调用 Clone() ，这样对 Data 字段的修改不会影响其他副本。
 //
 // +stateify savable
 type PacketBuffer struct {
-
 
 	// Data holds the payload of the packet. For inbound packets, it also
 	// holds the headers, which are consumed as the packet moves up the

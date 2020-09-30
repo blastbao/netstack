@@ -485,18 +485,17 @@ type Options struct {
 //
 // +stateify savable
 type TransportEndpointInfo struct {
-	// The following fields are initialized at creation time and are
-	// immutable.
 
+	// The following fields are initialized at creation time and are immutable.
 	NetProto   tcpip.NetworkProtocolNumber
 	TransProto tcpip.TransportProtocolNumber
 
 	// The following fields are protected by endpoint mu.
 
 	ID TransportEndpointID
+
 	// BindNICID and bindAddr are set via calls to Bind(). They are used to
-	// reject attempts to send data or connect via a different NIC or
-	// address
+	// reject attempts to send data or connect via a different NIC or address
 	BindNICID tcpip.NICID
 	BindAddr  tcpip.Address
 	// RegisterNICID is the default NICID registered as a side-effect of
@@ -972,9 +971,9 @@ func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	return nics
 }
 
-// GetMainNICAddress returns the first primary address and prefix for the given
-// NIC and protocol. Returns an error if the NIC doesn't exist and an empty
-// value if the NIC doesn't have a primary address for the given protocol.
+// GetMainNICAddress returns the first primary address and prefix for the given NIC and protocol.
+// Returns an error if the NIC doesn't exist and an empty value if the NIC doesn't have a primary
+// address for the given protocol.
 func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber) (tcpip.AddressWithPrefix, *tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1003,8 +1002,8 @@ func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.Netwo
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
-// FindRoute creates a route to the given destination address, leaving through
-// the given nic and local address (if provided).
+// FindRoute creates a route to the given destination address,
+// leaving through the given nic and local address (if provided).
 func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (Route, *tcpip.Error) {
 
 	s.mu.RLock()
@@ -1191,19 +1190,45 @@ func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.
 // transport dispatcher. Received packets that match the provided id will be
 // delivered to the given endpoint; specifying a nic is optional, but
 // nic-specific IDs have precedence over global ones.
-func (s *Stack) RegisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+//
+// RegisterTransportEndpoint 将给定的 endpoint 注册到协议栈传输层调度器上。
+// 接收到的 id 的数据包将被传送到给定的 endpoint ；指定 nic 是可选的，但 nic 特定的 id 比全局的 id 优先。
+//
+func (s *Stack) RegisterTransportEndpoint(
+	nicID tcpip.NICID,
+	netProtos []tcpip.NetworkProtocolNumber,
+	protocol tcpip.TransportProtocolNumber,
+	id TransportEndpointID,
+	ep TransportEndpoint,
+	reusePort bool,
+	bindToDevice tcpip.NICID,
+) *tcpip.Error {
 	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
 }
 
 // UnregisterTransportEndpoint removes the endpoint with the given id from the
 // stack transport dispatcher.
-func (s *Stack) UnregisterTransportEndpoint(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+func (s *Stack) UnregisterTransportEndpoint(
+	nicID tcpip.NICID,
+	netProtos []tcpip.NetworkProtocolNumber,
+	protocol tcpip.TransportProtocolNumber,
+	id TransportEndpointID,
+	ep TransportEndpoint,
+	bindToDevice tcpip.NICID,
+) {
 	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
 // StartTransportEndpointCleanup removes the endpoint with the given id from
 // the stack transport dispatcher. It also transitions it to the cleanup stage.
-func (s *Stack) StartTransportEndpointCleanup(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, bindToDevice tcpip.NICID) {
+func (s *Stack) StartTransportEndpointCleanup(
+	nicID tcpip.NICID,
+	netProtos []tcpip.NetworkProtocolNumber,
+	protocol tcpip.TransportProtocolNumber,
+	id TransportEndpointID,
+	ep TransportEndpoint,
+	bindToDevice tcpip.NICID,
+) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1222,20 +1247,35 @@ func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
 
 // FindTransportEndpoint finds an endpoint that most closely matches the provided
 // id. If no endpoint is found it returns nil.
-func (s *Stack) FindTransportEndpoint(netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, id TransportEndpointID, r *Route) TransportEndpoint {
+func (s *Stack) FindTransportEndpoint(
+	netProto tcpip.NetworkProtocolNumber,
+	transProto tcpip.TransportProtocolNumber,
+	id TransportEndpointID,
+	r *Route,
+) TransportEndpoint {
 	return s.demux.findTransportEndpoint(netProto, transProto, id, r)
 }
 
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
-func (s *Stack) RegisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) *tcpip.Error {
+func (s *Stack) RegisterRawTransportEndpoint(
+	nicID tcpip.NICID,
+	netProto tcpip.NetworkProtocolNumber,
+	transProto tcpip.TransportProtocolNumber,
+	ep RawTransportEndpoint,
+) *tcpip.Error {
 	return s.demux.registerRawEndpoint(netProto, transProto, ep)
 }
 
 // UnregisterRawTransportEndpoint removes the endpoint for the transport
 // protocol from the stack transport dispatcher.
-func (s *Stack) UnregisterRawTransportEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ep RawTransportEndpoint) {
+func (s *Stack) UnregisterRawTransportEndpoint(
+	nicID tcpip.NICID,
+	netProto tcpip.NetworkProtocolNumber,
+	transProto tcpip.TransportProtocolNumber,
+	ep RawTransportEndpoint,
+) {
 	s.demux.unregisterRawEndpoint(netProto, transProto, ep)
 }
 

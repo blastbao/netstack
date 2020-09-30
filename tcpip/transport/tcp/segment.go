@@ -70,7 +70,7 @@ type segment struct {
 	csum uint16
 
 	// csumValid is true if the csum in the received segment is valid.
-	// 校验和
+	// 校验和：如果接收到的 segment 的 csum 有效，则 csumValid 为 true 。
 	csumValid bool
 
 	// parsedOptions stores the parsed values from the options in the segment.
@@ -99,10 +99,8 @@ func newSegment(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBu
 		id:     id,
 		route:  r.Clone(),
 	}
-	// 从 packet 中拷贝数据到 s.data 里
-	s.data = pkt.Data.Clone(s.views[:])
-	// 更新 s 的接收时间
-	s.rcvdTime = time.Now()
+	s.data = pkt.Data.Clone(s.views[:]) // 从 packet 中拷贝数据到 s.data 里
+	s.rcvdTime = time.Now()				// 更新 s 的接收时间
 	return s
 }
 
@@ -190,7 +188,6 @@ func (s *segment) parse() bool {
 	// 从 data 中取出 header
 	h := header.TCP(s.data.First())
 
-
 	// h is the header followed by the payload. We check that the offset to
 	// the data respects the following constraints:
 	// 1. That it's at least the minimum header size; if we don't do this
@@ -214,7 +211,6 @@ func (s *segment) parse() bool {
 	s.options = []byte(h[header.TCPMinimumSize:offset])
 	s.parsedOptions = header.ParseTCPOptions(s.options)
 
-
 	// Query the link capabilities to decide if checksum validation is required.
 	verifyChecksum := true
 
@@ -224,7 +220,7 @@ func (s *segment) parse() bool {
 		s.data.TrimFront(offset)
 	}
 
-	//
+	// 校验和
 	if verifyChecksum {
 		s.csum = h.Checksum()
 		xsum := s.route.PseudoHeaderChecksum(ProtocolNumber, uint16(s.data.Size()))

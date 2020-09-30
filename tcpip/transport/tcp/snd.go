@@ -1038,23 +1038,29 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	return true
 }
 
-// handleRcvdSegment is called when a segment is received; it is responsible for
-// updating the send-related state.
+// handleRcvdSegment is called when a segment is received;
+// it is responsible for updating the send-related state.
 func (s *sender) handleRcvdSegment(seg *segment) {
+
 	// Check if we can extract an RTT measurement from this ack.
+	// 检查我们是否能从这个 ACK 中提取出 RTT 测量值。
 	if !seg.parsedOptions.TS && s.rttMeasureSeqNum.LessThan(seg.ackNumber) {
 		s.updateRTO(time.Now().Sub(s.rttMeasureTime))
 		s.rttMeasureSeqNum = s.sndNxt
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
+	// 必要时，更新时间戳。
 	if s.ep.sendTSOk && seg.parsedOptions.TS {
 		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
 	}
 
 	// Insert SACKBlock information into our scoreboard.
+	// 将 SACKBlock 信息插入到我们的记分板中。
 	if s.ep.sackPermitted {
+
 		for _, sb := range seg.parsedOptions.SACKBlocks {
+
 			// Only insert the SACK block if the following holds
 			// true:
 			//  * SACK block acks data after the ack number in the
@@ -1076,16 +1082,19 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	}
 
 	// Count the duplicates and do the fast retransmit if needed.
+	// 统计重复的数据，如果需要的话进行快速重传。
 	rtx := s.checkDuplicateAck(seg)
 
 	// Stash away the current window size.
+	// 收起当前的窗口大小。
 	s.sndWnd = seg.window
 
 	// Ignore ack if it doesn't acknowledge any new data.
+	// 如果它不应答任何新数据，就忽略 ACK 。
 	ack := seg.ackNumber
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
-		s.dupAckCount = 0
 
+		s.dupAckCount = 0
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
 		// Specifically we should only update the RTO using TSEcr if the
 		// following condition holds:
@@ -1095,17 +1104,18 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
 		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
-			// TSVal/Ecr values sent by Netstack are at a millisecond
-			// granularity.
+			// TSVal/Ecr values sent by Netstack are at a millisecond granularity.
+			// Netstack 发送的 TSVal/Ecr 值是以毫秒为粒度的。
 			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
 			s.updateRTO(elapsed)
 		}
 
-		// When an ack is received we must rearm the timer.
-		// RFC 6298 5.2
+		// When an ack is received we must rearm the timer. RFC 6298 5.2
+		// 当收到 ACK 时，我们必须重新启动定时器。
 		s.resendTimer.enable(s.rto)
 
 		// Remove all acknowledged data from the write list.
+		// 从写入列表 write list 中删除所有已确认的数据。
 		acked := s.sndUna.Size(ack)
 		s.sndUna = ack
 
@@ -1142,13 +1152,18 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		}
 
 		// Update the send buffer usage and notify potential waiters.
+		// 更新发送缓冲区的使用情况，并通知潜在的等待者。
 		s.ep.updateSndBufferUsage(int(acked))
 
 		// Clear SACK information for all acked data.
+		// 清除所有 ACK 数据的 SACK 信息。
 		s.ep.scoreboard.Delete(s.sndUna)
 
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
+		//
+		// 如果我们不在快速恢复中，那么就根据已确认的数据包数量更新拥塞窗口。
+		//
 		if !s.fr.active {
 			s.cc.Update(originalOutstanding - s.outstanding)
 			if s.fr.last.LessThan(s.sndUna) {
@@ -1159,21 +1174,26 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		// It is possible for s.outstanding to drop below zero if we get
 		// a retransmit timeout, reset outstanding to zero but later
 		// get an ack that cover previously sent data.
+		//
+		// 如果我们得到一个重传超时，将未发送的数据重置为零，但后来得到的 ACK 覆盖了之前发送的数据，那么 s.Outstanding 有可能降到零以下。
+		//
 		if s.outstanding < 0 {
 			s.outstanding = 0
 		}
 
 		s.SetPipe()
 
-		// If all outstanding data was acknowledged the disable the timer.
-		// RFC 6298 Rule 5.3
+		// If all outstanding data was acknowledged the disable the timer. RFC 6298 Rule 5.3
+		//
+		// 如果所有未完成的数据都被确认，则禁用定时器。
 		if s.sndUna == s.sndNxt {
 			s.outstanding = 0
 			s.resendTimer.disable()
 		}
 	}
-	// Now that we've popped all acknowledged data from the retransmit
-	// queue, retransmit if needed.
+	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
+	//
+	// 现在我们已经从重传队列中弹出了所有已确认的数据，如果需要就重传。
 	if rtx {
 		s.resendSegment()
 	}

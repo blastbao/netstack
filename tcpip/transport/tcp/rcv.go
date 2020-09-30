@@ -28,6 +28,7 @@ import (
 //
 // +stateify savable
 type receiver struct {
+
 	ep *endpoint
 
 	rcvNxt seqnum.Value
@@ -48,9 +49,11 @@ type receiver struct {
 
 	closed bool
 
+
 	pendingRcvdSegments segmentHeap
 	pendingBufUsed      seqnum.Size
 	pendingBufSize      seqnum.Size
+
 }
 
 func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8, pendingBufSize seqnum.Size) *receiver {
@@ -64,17 +67,19 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 	}
 }
 
+
 // acceptable checks if the segment sequence number range is acceptable
 // according to the table on page 26 of RFC 793.
+//
+// tcp流量控制：判断 segSeq 在窗口內
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 	rcvWnd := r.rcvNxt.Size(r.rcvAcc)
 	if rcvWnd == 0 {
 		return segLen == 0 && segSeq == r.rcvNxt
 	}
-
-	return segSeq.InWindow(r.rcvNxt, rcvWnd) ||
-		seqnum.Overlap(r.rcvNxt, rcvWnd, segSeq, segLen)
+	return segSeq.InWindow(r.rcvNxt, rcvWnd) || seqnum.Overlap(r.rcvNxt, rcvWnd, segSeq, segLen)
 }
+
 
 // getSendParams returns the parameters needed by the sender when building
 // segments to send.
@@ -94,13 +99,14 @@ func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
 // nonZeroWindow is called when the receive window grows from zero to nonzero;
 // in such cases we may need to send an ack to indicate to our peer that it can
 // resume sending data.
+//
+// tcp 流量控制：当接收窗口从零增长到非零时，调用 nonZeroWindow；在这种情况下，我们可能需要发送一个 ack，以便向对端表明它可以恢复发送数据。
 func (r *receiver) nonZeroWindow() {
 	if (r.rcvAcc-r.rcvNxt)>>r.rcvWndScale != 0 {
-		// We never got around to announcing a zero window size, so we
-		// don't need to immediately announce a nonzero one.
+		// We never got around to announcing a zero window size,
+		// so we don't need to immediately announce a nonzero one.
 		return
 	}
-
 	// Immediately send an ack.
 	r.ep.snd.sendAck()
 }
@@ -111,11 +117,18 @@ func (r *receiver) nonZeroWindow() {
 //
 // Returns true if the segment was consumed, false if it cannot be consumed
 // yet because of a missing segment.
+//
+// consumeSegment 判断当前收到的包是否可以造成接收窗口右移，
+// 如果是，说明 pendingRcvdSegments 这个堆里的数据包是连续的，
+// 然后把连续的包存到 endpoint 的 rcvList 队列里；
+// 如果不是，说明收到失序报文段，返回 FALSE
 func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum.Size) bool {
+
 	if segLen > 0 {
+
 		// If the segment doesn't include the seqnum we're expecting to
-		// consume now, we're missing a segment. We cannot proceed until
-		// we receive that segment though.
+		// consume now, we're missing a segment.
+		// We cannot proceed until we receive that segment though.
 		if !r.rcvNxt.InWindow(segSeq, segLen) {
 			return false
 		}
@@ -204,8 +217,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		return true
 	}
 
-	// Handle ACK (not FIN-ACK, which we handled above) during one of the
-	// shutdown states.
+
+
+	// Handle ACK (not FIN-ACK, which we handled above) during one of the shutdown states.
 	if s.flagIsSet(header.TCPFlagAck) {
 		r.ep.mu.Lock()
 		switch r.ep.state {
@@ -322,12 +336,11 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		}
 	}
 
-	// We don't care about receive processing anymore if the receive side
-	// is closed.
+	// We don't care about receive processing anymore if the receive side is closed.
 	//
 	// NOTE: We still want to permit a FIN as it's possible only our
-	// end has closed and the peer is yet to send a FIN. Hence we
-	// compare only the payload.
+	// end has closed and the peer is yet to send a FIN.
+	// Hence we compare only the payload.
 	segEnd := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
 	if rcvClosed && !segEnd.LessThanEq(r.rcvNxt) {
 		return true, nil
@@ -335,9 +348,14 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 	return false, nil
 }
 
-// handleRcvdSegment handles TCP segments directed at the connection managed by
-// r as they arrive. It is called by the protocol main loop.
+// handleRcvdSegment handles TCP segments directed at the connection managed by r as they arrive.
+// It is called by the protocol main loop.
+//
+// 本函数主要作用是接收乱序的包，放到 receiver 的 pendingRcvdSegments 这个最小堆里，
+// 在合适的时候把连续、完整的几个包放到 endpoint 的 rcvList，应用层读取连接的数据就是通过这个 rcvList 。
+//
 func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
+
 	r.ep.mu.RLock()
 	state := r.ep.state
 	closed := r.ep.closed
@@ -350,22 +368,28 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 		}
 	}
 
-	segLen := seqnum.Size(s.data.Size())
 	segSeq := s.sequenceNumber
+	segLen := seqnum.Size(s.data.Size())
 
-	// If the sequence number range is outside the acceptable range, just
-	// send an ACK and stop further processing of the segment.
+	// If the sequence number range is outside the acceptable range,
+	// just send an ACK and stop further processing of the segment.
 	// This is according to RFC 793, page 68.
+	//
+	// 如果序列号范围超出了可接受的范围，只需发送一个 ACK ，并丢弃 segment 。
 	if !r.acceptable(segSeq, segLen) {
-		r.ep.snd.sendAck()
+		r.ep.snd.sendAck() // 发送冗余 ACK
 		return true, nil
 	}
 
 	// Defer segment processing if it can't be consumed now.
+	// 如果现在不能消费，则推迟处理 segment 。
 	if !r.consumeSegment(s, segSeq, segLen) {
+
+		//
 		if segLen > 0 || s.flagIsSet(header.TCPFlagFin) {
-			// We only store the segment if it's within our buffer
-			// size limit.
+
+			// We only store the segment if it's within our buffer size limit.
+			// 如果缓冲区空间足以容纳 s ，就存入 r.pendingRcvdSegments 中。
 			if r.pendingBufUsed < r.pendingBufSize {
 				r.pendingBufUsed += s.logicalLen()
 				s.incRef()
@@ -373,15 +397,16 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 				UpdateSACKBlocks(&r.ep.sack, segSeq, segSeq.Add(segLen), r.rcvNxt)
 			}
 
-			// Immediately send an ack so that the peer knows it may
-			// have to retransmit.
+			// Immediately send an ack so that the peer knows it may have to retransmit.
+			// 立即发送 ACK ，让对端知道它可能要重传。
 			r.ep.snd.sendAck()
+
 		}
 		return false, nil
 	}
 
-	// Since we consumed a segment update the receiver's RTT estimate
-	// if required.
+	// Since we consumed a segment update the receiver's RTT estimate if required.
+	// 由于我们消耗了一个 segment ，如果需要的话，更新接收器的 RTT 估计。
 	if segLen > 0 {
 		r.updateRTT()
 	}
@@ -389,7 +414,11 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	// By consuming the current segment, we may have filled a gap in the
 	// sequence number domain that allows pending segments to be consumed
 	// now. So try to do it.
+	//
+	//
+	// 继续检查 pendingRcvdSegments 里是否有更多连续的数据，如果有，取出来放到 rcvList 里
 	for !r.closed && r.pendingRcvdSegments.Len() > 0 {
+
 		s := r.pendingRcvdSegments[0]
 		segLen := seqnum.Size(s.data.Size())
 		segSeq := s.sequenceNumber
@@ -404,6 +433,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 		r.pendingBufUsed -= s.logicalLen()
 		s.decRef()
 	}
+
 	return false, nil
 }
 
@@ -437,7 +467,6 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	//    (2) returns to TIME-WAIT state if the SYN turns out
 	//      to be an old duplicate".
 	if s.flagIsSet(header.TCPFlagSyn) && r.rcvNxt.LessThan(segSeq) {
-
 		return false, true
 	}
 

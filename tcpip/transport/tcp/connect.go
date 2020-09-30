@@ -270,8 +270,8 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		return nil
 	}
 
-	// We are in the SYN-SENT state. We only care about segments that have
-	// the SYN flag.
+	// We are in the SYN-SENT state. We only care about segments that have the SYN flag.
+	// 当前处于 SYN-SENT 状态，只关心有 SYN 标志的段。
 	if !s.flagIsSet(header.TCPFlagSyn) {
 		return nil
 	}
@@ -280,10 +280,10 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 	rcvSynOpts := parseSynSegmentOptions(s)
 
 	// Remember if the Timestamp option was negotiated.
-	h.ep.maybeEnableTimestamp(&rcvSynOpts) // 设置是否允许时间戳选项
+	h.ep.maybeEnableTimestamp(&rcvSynOpts) 		// 设置是否允许时间戳选项
 
 	// Remember if the SACKPermitted option was negotiated.
-	h.ep.maybeEnableSACKPermitted(&rcvSynOpts)
+	h.ep.maybeEnableSACKPermitted(&rcvSynOpts)	//
 
 	// Remember the sequence we'll ack from now on.
 	h.ackNum = s.sequenceNumber + 1
@@ -395,8 +395,8 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		return nil
 	}
 
-	// We have previously received (and acknowledged) the peer's SYN. If the
-	// peer acknowledges our SYN, the handshake is completed.
+	// We have previously received (and acknowledged) the peer's SYN.
+	// If the peer acknowledges our SYN, the handshake is completed.
 	if s.flagIsSet(header.TCPFlagAck) {
 
 		// 如果之前协商好了要带上 timeStamp 选项，但是握手第三步没有带上时间戳，那么丢弃这个 ACK 数据包。
@@ -918,19 +918,23 @@ func (e *endpoint) sendRaw(data buffer.VectorisedView, flags byte, seq, ack seqn
 }
 
 func (e *endpoint) handleWrite() *tcpip.Error {
+
 	// Move packets from send queue to send list. The queue is accessible
 	// from other goroutines and protected by the send mutex, while the send
-	// list is only accessible from the handler goroutine, so it needs no
-	// mutexes.
+	// list is only accessible from the handler goroutine, so it needs no mutexes.
+	//
+	// 将数据包从发送队列 e.sendQueue 移动到发送列表 e.snd.writeList 。
+	//
+	// 发送队列 e.sendQueue 可以被多个 goroutine 并发访问，所以要受 e.sndBufMu 保护。
+	// 发送列表 e.snd.writeList 只能从 handleWrite() 中访问，调用 handleWrite() 时已经加了锁，
+	// 所以 e.snd.writeList 只能被一个 goroutine 操作，不需要再加锁。
 	e.sndBufMu.Lock()
-
 	first := e.sndQueue.Front()
 	if first != nil {
-		e.snd.writeList.PushBackList(&e.sndQueue)
-		e.snd.sndNxtList.UpdateForward(e.sndBufInQueue)
-		e.sndBufInQueue = 0
+		e.snd.writeList.PushBackList(&e.sndQueue)		// 把 e.sendQueue 整个链表追加到了 e.snd.writeList 尾部，由 e.sender 接管
+		e.snd.sndNxtList.UpdateForward(e.sndBufInQueue) //
+		e.sndBufInQueue = 0 							//
 	}
-
 	e.sndBufMu.Unlock()
 
 	// Initialize the next segment to write if it's currently nil.
@@ -984,9 +988,8 @@ func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
 	}
 }
 
-// completeWorkerLocked is called by the worker goroutine when it's about to
-// exit. It marks the worker as completed and performs cleanup work if requested
-// by Close().
+// completeWorkerLocked is called by the worker goroutine when it's about to exit.
+// It marks the worker as completed and performs cleanup work if requested by Close().
 func (e *endpoint) completeWorkerLocked() {
 	e.workerRunning = false
 	if e.workerCleanup {
@@ -1062,14 +1065,19 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err *tcpip.Error) {
 	return true, nil
 }
 
-// handleSegments pulls segments from the queue and processes them. It returns
-// no error if the protocol loop should continue, an error otherwise.
+// handleSegments pulls segments from the queue and processes them.
+// It returns no error if the protocol loop should continue, an error otherwise.
 func (e *endpoint) handleSegments() *tcpip.Error {
+
 	checkRequeue := true
+
+	// maxSegmentsPerWake 是一个常量，值为 100，其实是随意设置的一个值，因为每次 newSegmentWaker 被触发时可能有很多包要被处理。
 	for i := 0; i < maxSegmentsPerWake; i++ {
+
 		e.mu.RLock()
 		state := e.state
 		e.mu.RUnlock()
+
 		if state == StateClose {
 			// When we get into StateClose while processing from the queue,
 			// return immediately and let the protocolMainloop handle it.
@@ -1081,6 +1089,7 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			return nil
 		}
 
+		// 从队列拿到无序的数据包
 		s := e.segmentQueue.dequeue()
 		if s == nil {
 			checkRequeue = false
@@ -1088,15 +1097,20 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 		}
 
 		// Invoke the tcp probe if installed.
+		// 如果安装了 tcp 探针，则调用该探针。
 		if e.probe != nil {
 			e.probe(e.completeState())
 		}
 
+		// 处理 RST 报文
 		if s.flagIsSet(header.TCPFlagRst) {
 			if ok, err := e.handleReset(s); !ok {
 				return err
 			}
+
+		// 处理 SYN 报文
 		} else if s.flagIsSet(header.TCPFlagSyn) {
+
 			// See: https://tools.ietf.org/html/rfc5961#section-4.1
 			//   1) If the SYN bit is set, irrespective of the sequence number, TCP
 			//    MUST send an ACK (also referred to as challenge ACK) to the remote
@@ -1106,54 +1120,74 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 			//
 			//    After sending the acknowledgment, TCP MUST drop the unacceptable
 			//    segment and stop processing further.
-			//
+
+
 			// By sending an ACK, the remote peer is challenged to confirm the loss
 			// of the previous connection and the request to start a new connection.
 			// A legitimate peer, after restart, would not have a TCB in the
 			// synchronized state.  Thus, when the ACK arrives, the peer should send
 			// a RST segment back with the sequence number derived from the ACK
 			// field that caused the RST.
+			//
+			// 通过发送 ACK ，远程 peer 受到挑战，以确认前一个连接的丢失和启动新连接的请求。
+			// 合法的 peer 在重新启动后，不会有一个处于同步状态的 TCP 连接。
+			// 因此，当 ACK 到达时，远程 peer 应该发送一个 RST 段回来，序列号来自引起 RST 的 ACK 字段。
+
 
 			// This RST will confirm that the remote peer has indeed closed the
 			// previous connection.  Upon receipt of a valid RST, the local TCP
 			// endpoint MUST terminate its connection.  The local TCP endpoint
 			// should then rely on SYN retransmission from the remote end to
 			// re-establish the connection.
+			//
+			// 该 RST 将确认远程 peer 确实已经关闭了之前的连接。
+			// 收到有效的 RST 后，本地 TCP 端点必须终止其连接。
+			// 然后，本地 TCP 端点应该依靠远端的 SYN 重传来重新建立连接。
 
 			e.snd.sendAck()
+
+		// 处理 ACK 报文
 		} else if s.flagIsSet(header.TCPFlagAck) {
-			// Patch the window size in the segment according to the
-			// send window scale.
+
+			// Patch the window size in the segment according to the send window scale.
+			// 根据发送窗口的比例，在该段中修补窗口大小。
 			s.window <<= e.snd.sndWndScale
 
-			// RFC 793, page 41 states that "once in the ESTABLISHED
-			// state all segments must carry current acknowledgment
-			// information."
+			// RFC 793, page 41 states that
+			// "once in the ESTABLISHED state all segments must carry current acknowledgment information."
+			//
+			// 一旦进入 ESTABLISHED 状态，所有的段必须携带当前的确认信息。
 			drop, err := e.rcv.handleRcvdSegment(s)
+
 			if err != nil {
 				s.decRef()
 				return err
 			}
+
 			if drop {
 				s.decRef()
 				continue
 			}
+
 			e.snd.handleRcvdSegment(s)
 		}
 		s.decRef()
 	}
 
-	// If the queue is not empty, make sure we'll wake up in the next
-	// iteration.
+
+	// If the queue is not empty, make sure we'll wake up in the next iteration.
+	// 当 100 次过后还有未处理的包，再次触发 newSegmentWaker，继续处理。
 	if checkRequeue && !e.segmentQueue.empty() {
 		e.newSegmentWaker.Assert()
 	}
 
 	// Send an ACK for all processed packets if needed.
+	// 如果需要，为所有处理过的数据包发送ACK。
 	if e.rcv.rcvNxt != e.snd.maxSentAck {
 		e.snd.sendAck()
 	}
 
+	// 重置 keepalive 定时器
 	e.resetKeepaliveTimer(true)
 
 	return nil
@@ -1191,8 +1225,7 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	if receivedData {
 		e.keepalive.unacked = 0
 	}
-	// Start the keepalive timer IFF it's enabled and there is no pending
-	// data to send.
+	// Start the keepalive timer IFF it's enabled and there is no pending data to send.
 	if !e.keepalive.enabled || e.snd == nil || e.snd.sndUna != e.snd.sndNxt {
 		e.keepalive.timer.disable()
 		return
@@ -1222,10 +1255,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	var closeTimer *time.Timer
 	var closeWaker sleep.Waker
 
+	// 尾声
 	epilogue := func() {
 
 		// e.mu is expected to be hold upon entering this section.
-
 		if e.snd != nil {
 			e.snd.resendTimer.cleanup()
 		}
@@ -1247,15 +1280,17 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 
 	if handshake {
-		// This is an active connection, so we must initiate the 3-way
-		// handshake, and then inform potential waiters about its
-		// completion.
+		// This is an active connection, so we must initiate the 3-way handshake,
+		// and then inform potential waiters about its completion.
+		//
+		// 这是主动连接，我们必须发起 3 路握手，然后在完成后通知潜在的 waiters 。
 		initialRcvWnd := e.initialReceiveWindow()
 		h := newHandshake(e, seqnum.Size(initialRcvWnd))
 		e.mu.Lock()
-		h.ep.state = StateSynSent
+		h.ep.state = StateSynSent // 处于 "SynSent" 状态
 		e.mu.Unlock()
 
+		// 执行三次握手
 		if err := h.execute(); err != nil {
 			e.lastErrorMu.Lock()
 			e.lastError = err
@@ -1269,13 +1304,12 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 			// Lock released below.
 			epilogue()
-
 			return err
 		}
 
-		// Transfer handshake state to TCP connection. We disable
-		// receive window scaling if the peer doesn't support it
-		// (indicated by a negative send window scale).
+		// Transfer handshake state to TCP connection.
+		// We disable receive window scaling if the peer doesn't
+		// support it (indicated by a negative send window scale).
 		e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
 
 		rcvBufSize := seqnum.Size(e.receiveBufferSize())
@@ -1307,9 +1341,9 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 
 	e.waiterQueue.Notify(waiter.EventOut)
 
-	// Set up the functions that will be called when the main protocol loop
-	// wakes up.
-	funcs := []struct {
+	// Set up the functions that will be called when the main protocol loop wakes up.
+	// 设置主协议循环唤醒时调用的函数。
+	funcs := [] struct {
 		w *sleep.Waker
 		f func() *tcpip.Error
 	}{
@@ -1328,9 +1362,10 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		{
 			w: &closeWaker,
 			f: func() *tcpip.Error {
-				// This means the socket is being closed due
-				// to the TCP_FIN_WAIT2 timeout was hit. Just
-				// mark the socket as closed.
+				// This means the socket is being closed due to the TCP_FIN_WAIT2 timeout was hit.
+				// Just mark the socket as closed.
+				//
+				// 这意味着由于 TCP_FIN_WAIT2 超时，套接字正在被关闭，将该套接字标记为 'StateClose' 即可。
 				e.mu.Lock()
 				e.transitionToStateCloseLocked()
 				e.mu.Unlock()
@@ -1353,6 +1388,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		{
 			w: &e.notificationWaker,
 			f: func() *tcpip.Error {
+
 				n := e.fetchNotifications()
 				if n&notifyNonZeroReceiveWindow != 0 {
 					e.rcv.nonZeroWindow()

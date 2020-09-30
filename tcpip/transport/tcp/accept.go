@@ -61,21 +61,29 @@ var (
 	//
 	// It is an exported variable only for testing, and should not otherwise
 	// be used by importers of this package.
+	//
+	// SynRcvdCountThreshold 是指在 TCP 开始使用 SYN cookies 接受连接之前，
+	// 允许处于 SYN-RCVD 状态的全局最大连接数。这个导出变量只用于测试，正常情况下不应该被包的引入者使用。
 	SynRcvdCountThreshold uint64 = 1000
 
 
 	// mssTable is a slice containing the possible MSS values that we
 	// encode in the SYN cookie with two bits.
+	//
+	// mssTable 是一个包含可能的 MSS 值的 slice ，我们在 SYN cookie 中可能会使用它。
 	mssTable = []uint16{536, 1300, 1440, 1460}
+
 
 )
 
 func encodeMSS(mss uint16) uint32 {
+
 	for i := len(mssTable) - 1; i > 0; i-- {
 		if mss >= mssTable[i] {
 			return uint32(i)
 		}
 	}
+
 	return 0
 }
 
@@ -92,6 +100,10 @@ var synRcvdCount struct {
 // listening for connections. This struct is allocated by the listen goroutine
 // and must not be accessed or have its methods called concurrently as they
 // may mutate the stored objects.
+//
+// listenContext 被 listen endpoint 用来存储监听连接时使用的状态。
+// 这个结构是由 listen goroutine 创建的，它的方法不能被并发调用，方式数据竞争。
+//
 type listenContext struct {
 	stack    *stack.Stack
 	rcvWnd   seqnum.Size
@@ -102,20 +114,26 @@ type listenContext struct {
 	hasher   hash.Hash
 	v6only   bool
 	netProto tcpip.NetworkProtocolNumber
+
 	// pendingMu protects pendingEndpoints. This should only be accessed
 	// by the listening endpoint's worker goroutine.
 	//
 	// Lock Ordering: listenEP.workerMu -> pendingMu
+	//
+	// pendingMu 保护 pendingEndpoints ，保证只有 listen endpoint 端点的 worker goroutine 才能访问。
 	pendingMu sync.Mutex
-	// pending is used to wait for all pendingEndpoints to finish when
-	// a socket is closed.
+
+	// pending is used to wait for all pendingEndpoints to finish when a socket is closed.
+	// pending 用于当一个套接字被关闭时，等待所有的 pendingEndpoints 结束。
 	pending sync.WaitGroup
-	// pendingEndpoints is a map of all endpoints for which a handshake is
-	// in progress.
+
+	// pendingEndpoints is a map of all endpoints for which a handshake is in progress.
+	// pendingEndpoints 是保存所有正在进行握手的 endpoints 的 map 。
 	pendingEndpoints map[stack.TransportEndpointID]*endpoint
 }
 
 // timeStamp returns an 8-bit timestamp with a granularity of 64 seconds.
+// timeStamp 返回一个单位为 64 秒的 8 位时间戳。
 func timeStamp() uint32 {
 	return uint32(time.Now().Unix()>>6) & tsMask
 }
@@ -154,8 +172,7 @@ func decSynRcvdCount() {
 	synRcvdCount.Unlock()
 }
 
-// synCookiesInUse() returns true if the synRcvdCount is greater than
-// SynRcvdCountThreshold.
+// synCookiesInUse() returns true if the synRcvdCount is greater than SynRcvdCountThreshold.
 func synCookiesInUse() bool {
 	synRcvdCount.Lock()
 	v := synRcvdCount.value
@@ -216,10 +233,12 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonc
 	return binary.BigEndian.Uint32(h[:])
 }
 
-// createCookie creates a SYN cookie for the given id and incoming sequence
-// number.
+// createCookie creates a SYN cookie for the given id and incoming sequence number.
+// createCookie 为给定的 id 和传入的序列号创建一个 SYN cookie 。
 func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Value, data uint32) seqnum.Value {
+	// 获取当前时间戳
 	ts := timeStamp()
+	//
 	v := l.cookieHash(id, 0, 0) + uint32(seq) + (ts << tsOffset)
 	v += (l.cookieHash(id, ts, 1) + data) & hashMask
 	return seqnum.Value(v)
@@ -559,11 +578,11 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 			//
 			cookie := ctx.createCookie(s.id, s.sequenceNumber, encodeMSS(opts.MSS))
 
-			// Send SYN without window scaling because we currently
-			// dont't encode this information in the cookie.
+			// Send SYN without window scaling because we currently dont't encode this information in the cookie.
+			// Enable Timestamp option if the original syn did have the timestamp option specified.
 			//
-			// Enable Timestamp option if the original syn did have
-			// the timestamp option specified.
+			// 发送 SYN 时不需指定窗口缩放选项，因为目前没有在 cookie 中编码这些信息。
+			// 如果原始 SYN 报文中有指定时间戳选项，则启用时间戳选项。
 			synOpts := header.TCPSynOptions{
 				WS:    -1,
 				TS:    opts.TS,
@@ -571,7 +590,20 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				TSEcr: opts.TSVal,
 				MSS:   mssForRoute(&s.route),
 			}
-			e.sendSynTCP(&s.route, s.id, e.ttl, e.sendTOS, header.TCPFlagSyn|header.TCPFlagAck, cookie, s.sequenceNumber+1, ctx.rcvWnd, synOpts)
+
+			//
+			e.sendSynTCP(
+				&s.route,
+				s.id,
+				e.ttl,
+				e.sendTOS,
+				header.TCPFlagSyn|header.TCPFlagAck,
+				cookie,
+				s.sequenceNumber+1,
+				ctx.rcvWnd,
+				synOpts,
+			)
+
 			e.stack.Stats().TCP.ListenOverflowSynCookieSent.Increment()
 		}
 
@@ -702,28 +734,33 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	// 构造 listen 上下文
 	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
-
 	defer func() {
 
-		// Mark endpoint as closed. This will prevent goroutines running
-		// handleSynSegment() from attempting to queue new connections to the endpoint.
+		// Mark endpoint as closed.
+		// This will prevent goroutines running handleSynSegment() from attempting to
+		// queue new connections to the endpoint.
+		//
+		// 将状态置为 close ，这将防止运行 handleSynSegment() 的 goroutines 试图将新的连接请求入队。
 		e.mu.Lock()
 		e.state = StateClose
 
 		// close any endpoints in SYN-RCVD state.
+		// 关闭处于 SYN-RCVD 状态的 endpoints 。
 		ctx.closeAllPendingEndpoints()
 
 		// Do cleanup if needed.
+		// 必要时做清理工作。
 		e.completeWorkerLocked()
 
+		// ?
 		if e.drainDone != nil {
 			close(e.drainDone)
 		}
 		e.mu.Unlock()
 
 		// Notify waiters that the endpoint is shutdown.
+		// 通知 waiters 监听端点已关闭。
 		e.waiterQueue.Notify(waiter.EventIn | waiter.EventOut)
-
 
 	}()
 
@@ -738,11 +775,13 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 
 		case wakerForNotification:
 			n := e.fetchNotifications()
-			// 表示收到退出通知
+			// 收到退出通知
 			if n&notifyClose != 0 {
 				return nil
 			}
+			// 收到排空通知
 			if n&notifyDrain != 0 {
+				// 如果 segment 队列不空，就逐个出队并处理
 				for !e.segmentQueue.empty() {
 					s := e.segmentQueue.dequeue()
 					e.handleListenSegment(ctx, s)

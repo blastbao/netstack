@@ -161,11 +161,9 @@ func (*channelCallback) Callback(e *Entry) {
 // If a channel isn't specified (i.e., if "c" is nil), then NewChannelEntry
 // allocates a new channel.
 func NewChannelEntry(c chan struct{}) (Entry, chan struct{}) {
-
 	if c == nil {
 		c = make(chan struct{}, 1)
 	}
-
 	return Entry{
 		Context: c,
 		Callback: &channelCallback{},

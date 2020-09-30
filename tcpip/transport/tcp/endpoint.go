@@ -126,9 +126,9 @@ const (
 	notifyMSSChanged
 
 	// notifyTickleWorker is used to tickle the protocol main loop during a
-	// restore after we update the endpoint state to the correct one. This
-	// ensures the loop terminates if the final state of the endpoint is
-	// say TIME_WAIT.
+	// restore after we update the endpoint state to the correct one.
+	//
+	// This ensures the loop terminates if the final state of the endpoint is say TIME_WAIT.
 	notifyTickleWorker
 )
 
@@ -150,34 +150,34 @@ type SACKInfo struct {
 //
 // +stateify savable
 type rcvBufAutoTuneParams struct {
-	// measureTime is the time at which the current measurement
-	// was started.
+
+
+	// measureTime is the time at which the current measurement was started.
 	measureTime time.Time
 
-	// copied is the number of bytes copied out of the receive
-	// buffers since this measure began.
+
+	// copied is the number of bytes copied out of the receive buffers since this measure began.
 	copied int
 
-	// prevCopied is the number of bytes copied out of the receive
-	// buffers in the previous RTT period.
+
+	// prevCopied is the number of bytes copied out of the receive buffers in the previous RTT period.
 	prevCopied int
 
-	// rtt is the non-smoothed minimum RTT as measured by observing the time
-	// between when a byte is first acknowledged and the receipt of data
-	// that is at least one window beyond the sequence number that was
-	// acknowledged.
+
+	// rtt is the non-smoothed minimum RTT as measured by observing the time between when a byte is first acknowledged
+	// and the receipt of data that is at least one window beyond the sequence number that was acknowledged.
 	rtt time.Duration
 
-	// rttMeasureSeqNumber is the highest acceptable sequence number at the
-	// time this RTT measurement period began.
+
+	// rttMeasureSeqNumber is the highest acceptable sequence number at the time this RTT measurement period began.
 	rttMeasureSeqNumber seqnum.Value
 
-	// rttMeasureTime is the absolute time at which the current rtt
-	// measurement period began.
+
+	// rttMeasureTime is the absolute time at which the current rtt measurement period began.
 	rttMeasureTime time.Time
 
-	// disabled is true if an explicit receive buffer is set for the
-	// endpoint.
+
+	// disabled is true if an explicit receive buffer is set for the endpoint.
 	disabled bool
 }
 
@@ -185,23 +185,19 @@ type rcvBufAutoTuneParams struct {
 type ReceiveErrors struct {
 	tcpip.ReceiveErrors
 
-	// SegmentQueueDropped is the number of segments dropped due to
-	// a full segment queue.
+	// SegmentQueueDropped is the number of segments dropped due to a full segment queue.
 	SegmentQueueDropped tcpip.StatCounter
 
 	// ChecksumErrors is the number of segments dropped due to bad checksums.
 	ChecksumErrors tcpip.StatCounter
 
-	// ListenOverflowSynDrop is the number of times the listen queue overflowed
-	// and a SYN was dropped.
+	// ListenOverflowSynDrop is the number of times the listen queue overflowed and a SYN was dropped.
 	ListenOverflowSynDrop tcpip.StatCounter
 
-	// ListenOverflowAckDrop is the number of times the final ACK
-	// in the handshake was dropped due to overflow.
+	// ListenOverflowAckDrop is the number of times the final ACK in the handshake was dropped due to overflow.
 	ListenOverflowAckDrop tcpip.StatCounter
 
-	// ZeroRcvWindowState is the number of times we advertised
-	// a zero receive window when rcvList is full.
+	// ZeroRcvWindowState is the number of times we advertised a zero receive window when rcvList is full.
 	ZeroRcvWindowState tcpip.StatCounter
 }
 
@@ -264,6 +260,7 @@ func (*Stats) IsEndpointStats() {}
 //
 // +stateify savable
 type EndpointInfo struct {
+
 	stack.TransportEndpointInfo
 
 	// HardError is meaningful only when state is stateError. It stores the
@@ -284,6 +281,7 @@ func (*EndpointInfo) IsEndpointInfo() {}
 //
 // +stateify savable
 type endpoint struct {
+
 	EndpointInfo
 
 	// workMu is used to arbitrate which goroutine may perform protocol
@@ -334,10 +332,10 @@ type endpoint struct {
 	// state.
 	origEndpointState EndpointState
 
-	isPortReserved    bool
-	isRegistered      bool
-	boundNICID        tcpip.NICID
-	route             stack.Route
+	isPortReserved    bool			//
+	isRegistered      bool			// 是否已经注册到传输层
+	boundNICID        tcpip.NICID   //
+	route             stack.Route   //
 	ttl               uint8
 	v6only            bool
 	isConnectNotified bool
@@ -352,15 +350,29 @@ type endpoint struct {
 	// protocols (e.g., IPv6 and IPv4) or a single different protocol (e.g.,
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
+	//
+	// effectiveNetProtos 包含实际使用的网络协议。
+	// 在大多数情况下，它只包含 "netProto"，但是，比如在 IPv6 端点将 v6only 设置为 false 的情况下，
+	// 它可能包含多个协议（如 IPv6 和 IPv4 ）；或者当 IPv6 端点绑定或连接到 IPv4 地址时，这个协议为 IPV4。
+	//
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 
 	// workerRunning specifies if a worker goroutine is running.
+	// workerRunning 标识了一个 worker goroutine 是否正在运行。
 	workerRunning bool
 
-	// workerCleanup specifies if the worker goroutine must perform cleanup
-	// before exitting. This can only be set to true when workerRunning is
-	// also true, and they're both protected by the mutex.
+	// workerCleanup specifies if the worker goroutine must perform cleanup before exitting.
+	// This can only be set to true when workerRunning is also true,
+	// and they're both protected by the mutex.
+	//
+	// workerCleanup 指定 worker goroutine 是否必须在退出前进行清理。
+	// 只有当 workerRunning 为 true 时，才能将 workerCleanup 设置为 true ，它们都受 mutex 保护。
 	workerCleanup bool
+
+
+
+
+
 
 	// sendTSOk is used to indicate when the TS Option has been negotiated.
 	// When sendTSOk is true every non-RST segment should carry a TS as per
@@ -390,6 +402,7 @@ type endpoint struct {
 	reusePort bool
 
 	// bindToDevice is set to the NIC on which to bind or disabled if 0.
+	// 将套接字绑定到指定接口，例如 eth0 等。如果绑定了接口，这个套接字只能处理由该接口收到的数据。
 	bindToDevice tcpip.NICID
 
 	// delay enables Nagle's algorithm.
@@ -446,20 +459,18 @@ type endpoint struct {
 	sndWaker      sleep.Waker
 	sndCloseWaker sleep.Waker
 
-
-
-
-	// cc stores the name of the Congestion Control algorithm to use for
-	// this endpoint.
+	// cc stores the name of the Congestion Control algorithm to use for this endpoint.
 	cc tcpip.CongestionControlOption
 
-	// The following are used when a "packet too big" control packet is
-	// received. They are protected by sndBufMu. They are used to
-	// communicate to the main protocol goroutine how many such control
-	// messages have been received since the last notification was processed
-	// and what was the smallest MTU seen.
-	packetTooBigCount int
-	sndMTU            int
+	// The following are used when a "packet too big" control packet is received.
+	// They are protected by sndBufMu.
+	//
+	// They are used to communicate to the main protocol goroutine how many such control
+	// messages have been received since the last notification was processed and what was
+	// the smallest MTU seen.
+	//
+	packetTooBigCount int 	// 已收到的 TooBig 控制消息条数
+	sndMTU            int   // 最小 MTU
 
 	// newSegmentWaker is used to indicate to the protocol goroutine that
 	// it needs to wake up and handle new segments queued to it.
@@ -582,6 +593,7 @@ type keepalive struct {
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
+
 	e := &endpoint{
 		stack: s,
 		EndpointInfo: EndpointInfo{
@@ -642,13 +654,13 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.segmentQueue.setLimit(MaxUnprocessedSegments)
 	e.workMu.Init()
 	e.workMu.Lock()
-	e.tsOffset = timeStampOffset()
+	e.tsOffset = timeStampOffset()	// 设置随机的时间戳偏移量
 
 	return e
 }
 
-// Readiness returns the current readiness of the endpoint. For example, if
-// waiter.EventIn is set, the endpoint is immediately readable.
+// Readiness returns the current readiness of the endpoint.
+// For example, if waiter.EventIn is set, the endpoint is immediately readable.
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	result := waiter.EventMask(0)
 
@@ -718,10 +730,10 @@ func (e *endpoint) notifyProtocolGoroutine(n uint32) {
 	}
 }
 
-// Close puts the endpoint in a closed state and frees all resources associated
-// with it. It must be called only once and with no other concurrent calls to
-// the endpoint.
+// Close puts the endpoint in a closed state and frees all resources associated with it.
+// It must be called only once and with no other concurrent calls to the endpoint.
 func (e *endpoint) Close() {
+
 	e.mu.Lock()
 	closed := e.closed
 	e.mu.Unlock()
@@ -794,8 +806,8 @@ func (e *endpoint) closePendingAcceptableConnectionsLocked() {
 // after Close() is called and the worker goroutine (if any) is done with its
 // work.
 func (e *endpoint) cleanupLocked() {
-	// Close all endpoints that might have been accepted by TCP but not by
-	// the client.
+
+	// Close all endpoints that might have been accepted by TCP but not by the client.
 	if e.acceptedChan != nil {
 		e.closePendingAcceptableConnectionsLocked()
 	}
@@ -902,7 +914,9 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 
 // Read reads data from the endpoint.
 func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+
 	e.mu.RLock()
+
 	// The endpoint can be read if it's connected, or if it's already closed
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
@@ -931,7 +945,10 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	return v, tcpip.ControlMessages{}, err
 }
 
+// 从 tcp 的接收队列中读取数据，并从接收队列中删除已读数据
 func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
+
+
 	if e.rcvBufUsed == 0 {
 		if e.rcvClosed || !e.state.connected() {
 			return buffer.View{}, tcpip.ErrClosedForReceive
@@ -950,13 +967,17 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 	}
 
 	e.rcvBufUsed -= len(v)
+
 	// If the window was zero before this read and if the read freed up
 	// enough buffer space for the scaled window to be non-zero then notify
 	// the protocol goroutine to send a window update.
+	//
+	// 检测糊涂窗口，主动发送窗口不为0的通告给对方
 	if e.zeroWindow && !e.zeroReceiveWindow(e.rcv.rcvWndScale) {
 		e.zeroWindow = false
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
+
 
 	return v, nil
 }
@@ -1003,6 +1024,8 @@ func (e *endpoint) isEndpointWritableLocked() (int, *tcpip.Error) {
 }
 
 // Write writes data to the endpoint's peer.
+//
+// 接收上层的数据，通过 tcp 连接发送到对端
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 
 
@@ -1025,7 +1048,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	//
 	// 从 Payloader 中获取待写数据时可以释放锁，避免阻塞其它写入操作，提高并发度。
 	// 但是，有可能读取完数据后，写入缓存区不足了，此时无法写入，可能要丢弃数据。
-
 
 	// This is not possible if atomic is set, because we can't allow the
 	// available buffer space to be consumed by some other caller while we
@@ -1051,7 +1073,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		return 0, nil, perr
 	}
 
-	// 如果 Atomic 为 false ，则在 p.Payload(avail) 获取数据前已经释放锁，现在需要重新获得锁，以便后续写入数据。
+	// 如果 Atomic 为 false （非原子），则在 "p.Payload(avail)" 获取数据前已经释放锁（以提高并发），现在需要重新获得锁，以便后续写入数据。
 	if !opts.Atomic { // See above.
 		e.mu.RLock()
 		e.sndBufMu.Lock()
@@ -1059,7 +1081,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// Because we released the lock before copying, check state again
 		// to make sure the endpoint is still in a valid state for a write.
 		//
-		// 因为在获取数据前释放了锁，所以要再次检查状态，以确保端点 e 仍然处于可写状态。
+		// 因为在获取数据前释放了锁，所以要再次确认端点 e 仍处于可写状态。
 		avail, err = e.isEndpointWritableLocked()
 		if err != nil {
 			e.sndBufMu.Unlock()
@@ -1077,21 +1099,18 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 	}
 
-
-
-
 	// Add data to the send queue.
-	s := newSegmentFromView(&e.route, e.ID, v)
-	e.sndBufUsed += len(v)
-	e.sndBufInQueue += seqnum.Size(len(v))
-	e.sndQueue.PushBack(s)
+	s := newSegmentFromView(&e.route, e.ID, v) 	// 把整块的数据根据当前窗口大小切出一个包，也就是说数据在此之前是‘流式’的
+	e.sndBufUsed += len(v)						// 发送缓冲区 + len(v)
+	e.sndBufInQueue += seqnum.Size(len(v))		//
+	e.sndQueue.PushBack(s)  					// 把数据包存入 e.sndQueue 链表里
 	e.sndBufMu.Unlock()
 
 	// Release the endpoint lock to prevent deadlocks due to lock order inversion when acquiring workMu.
 	// 获取 e.workMu 锁时，先释放 e.mu 锁，防止因锁序倒置而造成死锁。
 	e.mu.RUnlock()
 
-	//
+	// 发送数据，最终会调用 sender sendData 来发送数据。
 	if e.workMu.TryLock() {
 		// Do the work inline.
 		e.handleWrite()
@@ -1108,11 +1127,14 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 //
 // This method does not block if there is no data pending.
 func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Error) {
+
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	// The endpoint can be read if it's connected, or if it's already closed
-	// but has some pending unread data.
+	// The endpoint can be read if it's connected, or if it's already closed but has some pending unread data.
+	//
+	// 如果端点 e 处于 "connected" 状态或者处于 "closed" 状态但是仍有一些未读数据，就可以读取，否则报错。
 	if s := e.state; !s.connected() && s != StateClose {
 		if s == StateError {
 			return 0, tcpip.ControlMessages{}, e.HardError
@@ -1166,11 +1188,12 @@ func (e *endpoint) Peek(vec [][]byte) (int64, tcpip.ControlMessages, *tcpip.Erro
 // zero, based on the amount of available buffer and the receive window scaling.
 //
 // It must be called with rcvListMu held.
+//
+// zeroReceiveWindow 根据可用缓冲区的数量和接收窗口缩放，检查当前接收窗口是否为零。
 func (e *endpoint) zeroReceiveWindow(scale uint8) bool {
 	if e.rcvBufUsed >= e.rcvBufSize {
 		return true
 	}
-
 	return ((e.rcvBufSize - e.rcvBufUsed) >> scale) == 0
 }
 
@@ -1501,6 +1524,7 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 
 // GetSockOpt implements tcpip.Endpoint.GetSockOpt.
 func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
+
 	switch o := opt.(type) {
 	case tcpip.ErrorOption:
 		e.lastErrorMu.Lock()
@@ -1508,7 +1532,6 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 		e.lastError = nil
 		e.lastErrorMu.Unlock()
 		return err
-
 	case *tcpip.MaxSegOption:
 		// This is just stubbed out. Linux never returns the user_mss
 		// value as it either returns the defaultMSS or returns the
@@ -1883,8 +1906,7 @@ func (*endpoint) ConnectEndpoint(tcpip.Endpoint) *tcpip.Error {
 	return tcpip.ErrInvalidEndpointState
 }
 
-// Shutdown closes the read and/or write end of the endpoint connection to its
-// peer.
+// Shutdown closes the read and/or write end of the endpoint connection to its peer.
 func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	e.mu.Lock()
 	e.shutdownFlags |= flags
@@ -1951,8 +1973,8 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) *tcpip.Error {
 	return nil
 }
 
-// Listen puts the endpoint in "listen" mode, which allows it to accept
-// new connections.
+// Listen puts the endpoint in "listen" mode, which allows it to accept new connections.
+// Listen 使端点处于 "监听" 模式，允许它接受新的连接。
 func (e *endpoint) Listen(backlog int) *tcpip.Error {
 	err := e.listen(backlog)
 	if err != nil && !err.IgnoreStats() {
@@ -1962,7 +1984,11 @@ func (e *endpoint) Listen(backlog int) *tcpip.Error {
 	return err
 }
 
+
+// backlog 指等待 accept 的套接字的队列长度，也即 cap(e.acceptedChan) 。
+//
 func (e *endpoint) listen(backlog int) *tcpip.Error {
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -1970,15 +1996,19 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	// When the endpoint shuts down, it sets workerCleanup to true, and from
 	// that point onward, acceptedChan is the responsibility of the cleanup()
 	// method (and should not be touched anywhere else, including here).
+	//
+	// 将 e.acceptedChan 大小调整为 backlog 。
 	if e.state == StateListen && !e.workerCleanup {
-		// Adjust the size of the channel iff we can fix existing
-		// pending connections into the new one.
+		// Adjust the size of the channel iff we can fix existing pending connections into the new one.
+		// 如果 e.acceptedChan 中的元素数超过 backlog ，则无法完成拷贝，否则会丢掉部分数据。
 		if len(e.acceptedChan) > backlog {
 			return tcpip.ErrInvalidEndpointState
 		}
+		// 如果当前管道 e.acceptedChan 大小等于 backlog，无需调整其大小，直接返回。
 		if cap(e.acceptedChan) == backlog {
 			return nil
 		}
+		// 创建一个新的管道（容量为 backlog） ，将 e.acceptedChan 中元素拷贝到新管道中，然后替换掉。
 		origChan := e.acceptedChan
 		e.acceptedChan = make(chan *endpoint, backlog)
 		close(origChan)
@@ -1989,26 +2019,36 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	}
 
 	// Endpoint must be bound before it can transition to listen mode.
+	// Endpoint 在过渡到监听模式前必须先进行 bind。
 	if e.state != StateBound {
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		return tcpip.ErrInvalidEndpointState
 	}
 
 	// Register the endpoint.
-	if err := e.stack.RegisterTransportEndpoint(e.boundNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.reusePort, e.bindToDevice); err != nil {
+	// 将 endpoint 注册到协议栈传输层。
+	if err := e.stack.RegisterTransportEndpoint(
+		e.boundNICID,					// 网卡 ID
+		e.effectiveNetProtos,			// 实际使用的网络协议
+		ProtocolNumber,					// TCP 协议号
+		e.ID, 							// 传输层协议端点的标识符，四元组 <本地端口, 本地地址，远程端口， 远程地址>
+		e,								// 实现了 TransportEndpoint 接口，包括 HandlePacket(), HandleControlPacket() 等函数
+		e.reusePort, 					// 是否重用端口
+		e.bindToDevice);				// 是否将套接字绑定到指定接口，例如 eth0 等
+	err != nil {
 		return err
 	}
 
-	e.isRegistered = true
-	e.state = StateListen
+	// 修改状态
+	e.isRegistered = true 				// 设置为 "endpoint 已注册到传输层"
+	e.state = StateListen 				// 设置为 "endpoint 正在监听中"
 	if e.acceptedChan == nil {
-		e.acceptedChan = make(chan *endpoint, backlog)
+		e.acceptedChan = make(chan *endpoint, backlog) 	// 初始化 accept 队列，大小为 backlog
 	}
-	e.workerRunning = true
+	e.workerRunning = true				// 设置为 "监听 worker 正在运行中"
 
-
-	// 在 protocolListenLoop 中监听新的连接请求，主要处理三步握手的 SYN 报文和 ACK 报文，负责连接的被动建立。
-	go e.protocolListenLoop(seqnum.Size(e.receiveBufferAvailable())) // 这里启动时，同时设置了 rcvBuf 的大小
+	// 启动 worker 协程，负责监听新的连接请求，主要处理三步握手的 SYN 报文和 ACK 报文。
+	go e.protocolListenLoop(seqnum.Size(e.receiveBufferAvailable())) // 在启动时，设置了 rcvBuf 的大小。
 
 	return nil
 }
@@ -2047,12 +2087,12 @@ func (e *endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 		return nil, nil, tcpip.ErrWouldBlock
 	}
 
-	//
 	return n, n.waiterQueue, nil
 }
 
 // Bind binds the endpoint to a specific local port and optionally address.
 func (e *endpoint) Bind(addr tcpip.FullAddress) (err *tcpip.Error) {
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -2147,10 +2187,15 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 	}, nil
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
+// HandlePacket is called by the stack when new packets arrive to this transport endpoint.
+//
+// 当有新的数据包到达这个传输层 endpoint 时，协议栈会调用 endpoint.HandlePacket() 。
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
+
+	// 从 pkt 构造 segment
 	s := newSegment(r, id, pkt)
+
+	// 解析 tcp 协议，填充 s 内部字段，若解析失败，则丢弃当前 segment 。
 	if !s.parse() {
 		e.stack.Stats().MalformedRcvdPackets.Increment()
 		e.stack.Stats().TCP.InvalidSegmentsReceived.Increment()
@@ -2159,6 +2204,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
+	// 若校验和出错，直接丢弃
 	if !s.csumValid {
 		e.stack.Stats().MalformedRcvdPackets.Increment()
 		e.stack.Stats().TCP.ChecksumErrors.Increment()
@@ -2169,19 +2215,25 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 
 	e.stack.Stats().TCP.ValidSegmentsReceived.Increment()
 	e.stats.SegmentsReceived.Increment()
+
+	// 如果 s 是 RST 报文，这里上报一下
 	if (s.flags & header.TCPFlagRst) != 0 {
 		e.stack.Stats().TCP.ResetsReceived.Increment()
 	}
 
+	// 把 s 赛到 e.segmentQueue 中，若队列满，可能会丢弃，否则会被 handleSegments() 函数处理。
 	e.enqueueSegment(s)
 }
 
 func (e *endpoint) enqueueSegment(s *segment) {
 	// Send packet to worker goroutine.
+	// 把收到段 s 直接放到 endpoint 的 segmentQueue 里面，但是顺序是没有保障的。
 	if e.segmentQueue.enqueue(s) {
+		// 触发 newSegmentWaker 的回调函数 handleSegments 。
 		e.newSegmentWaker.Assert()
 	} else {
 		// The queue is full, so we drop the segment.
+		// 队列已经满了，就丢弃当前 s 。
 		e.stack.Stats().DroppedPackets.Increment()
 		e.stats.ReceiveErrors.SegmentQueueDropped.Increment()
 		s.decRef()
@@ -2191,14 +2243,16 @@ func (e *endpoint) enqueueSegment(s *segment) {
 // HandleControlPacket implements stack.TransportEndpoint.HandleControlPacket.
 func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.ControlType, extra uint32, pkt tcpip.PacketBuffer) {
 	switch typ {
-	case stack.ControlPacketTooBig:
+	case stack.ControlPacketTooBig: // 包太大
 		e.sndBufMu.Lock()
+		// 递增 PacketTooBig 报文计数
 		e.packetTooBigCount++
+		// extra 是控制报文（ICMP）返回的 mtu，如果该 mtu 小于 e.sndMTU ，就更新 e.sndMTU 。
 		if v := int(extra); v < e.sndMTU {
 			e.sndMTU = v
 		}
 		e.sndBufMu.Unlock()
-
+		// 通知 ProtocolGoroutine 协程，收到 ICMP 控制报文。
 		e.notifyProtocolGoroutine(notifyMTUChanged)
 	}
 }
@@ -2339,13 +2393,21 @@ func tcpTimeStamp(offset uint32) uint32 {
 
 // timeStampOffset returns a randomized timestamp offset to be used when sending
 // timestamp values in a timestamp option for a TCP segment.
+//
+// timeStampOffset 返回一个随机的时间戳偏移量，用于设置 TCP segment 的时间戳选项中的值。
+//
 func timeStampOffset() uint32 {
+
+	// 读取四字节随机数
 	b := make([]byte, 4)
 	if _, err := rand.Read(b); err != nil {
 		panic(err)
 	}
+
 	// Initialize a random tsOffset that will be added to the recentTS
 	// everytime the timestamp is sent when the Timestamp option is enabled.
+	//
+	// 构造一个随机的 tsOffset ，当启用 Timestamp 选项时，每次发送时间戳时都会将其添加到 recentTS 中。
 	//
 	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
 	// why this is required.
@@ -2376,7 +2438,6 @@ func (e *endpoint) maxOptionSize() (size int) {
 	options := e.makeOptions(maxSackBlocks[:])
 	size = len(options)
 	putOptions(options)
-
 	return size
 }
 

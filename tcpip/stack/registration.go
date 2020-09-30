@@ -30,7 +30,7 @@ type NetworkEndpointID struct {
 
 // TransportEndpointID is the identifier of a transport layer protocol endpoint.
 //
-// TransportEndpointID 是传输层协议端点的标识符 。
+// TransportEndpointID 是传输层协议端点的标识符，<本地端口, 本地地址，远程端口， 远程地址>。
 //
 // +stateify savable
 type TransportEndpointID struct {
@@ -57,26 +57,30 @@ type ControlType int
 
 // The following are the allowed values for ControlType values.
 const (
-	ControlPacketTooBig ControlType = iota
-	ControlPortUnreachable
-	ControlUnknown
+	ControlPacketTooBig ControlType = iota		// 包太大
+	ControlPortUnreachable						// 端口不可达
+	ControlUnknown								// 未知
 )
 
 // TransportEndpoint is the interface that needs to be implemented by transport
 // protocol (e.g., tcp, udp) endpoints that can handle packets.
 type TransportEndpoint interface {
+
 	// UniqueID returns an unique ID for this transport endpoint.
 	UniqueID() uint64
 
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint. It sets pkt.TransportHeader.
-	//
 	// HandlePacket takes ownership of pkt.
+	//
+	// 当新数据包到达这个传输端点时，协议栈会调用 HandlePacket() 。
 	HandlePacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer)
 
-	// HandleControlPacket is called by the stack when new control (e.g.
-	// ICMP) packets arrive to this transport endpoint.
+	// HandleControlPacket is called by the stack when new control (e.g. ICMP)
+	// packets arrive to this transport endpoint.
 	// HandleControlPacket takes ownership of pkt.
+	//
+	// 当新的控制报文（如 ICMP ）到达这个传输端点时，协议栈会调用 HandleControlPacket() 。
 	HandleControlPacket(id TransportEndpointID, typ ControlType, extra uint32, pkt tcpip.PacketBuffer)
 
 	// Close puts the endpoint in a closed state and frees all resources
