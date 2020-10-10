@@ -1194,26 +1194,38 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 	return nil
 }
 
-// keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
-// keepalive packets periodically when the connection is idle. If we don't hear
-// from the other side after a number of tries, we terminate the connection.
+// keepaliveTimerExpired is called when the keepaliveTimer fires.
+// We send TCP keepalive packets periodically when the connection is idle.
+// If we don't hear from the other side after a number of tries, we terminate the connection.
+//
+// keepaliveTimerExpired() 在 keepaliveTimer 触发时被调用。
+// 当连接空闲时，我们会定期发送 TCP keepalive 数据包，如果多次发送后都没有收到对方的回应，就终止连接。
 func (e *endpoint) keepaliveTimerExpired() *tcpip.Error {
+
 	e.keepalive.Lock()
 	if !e.keepalive.enabled || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
 		return nil
 	}
 
+
+	// 若 unacked 的 keepalive 数据包超过阈值，则中断连接。
 	if e.keepalive.unacked >= e.keepalive.count {
 		e.keepalive.Unlock()
 		return tcpip.ErrTimeout
 	}
 
-	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with
-	// seg.seq = snd.nxt-1.
+	// RFC1122 4.2.3.6: TCP keepalive is a dataless ACK with seg.seq = snd.nxt-1.
+	// RFC1122 4.2.3.6: TCP keepalive 是一个无数据 ACK ，seg.seq = snd.nxt-1 。
+
+	// 当 keepaliveTimerExpired() 被调用，意味着 keepalive 数据包发送超时，没有得到对方响应，需要增加 unacked 计数。
 	e.keepalive.unacked++
 	e.keepalive.Unlock()
+
+	//
 	e.snd.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, e.snd.sndNxt-1)
+
+	// 重置 keepalive 超时定时器。
 	e.resetKeepaliveTimer(false)
 	return nil
 }
@@ -1497,8 +1509,7 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 		if err := funcs[v].f(); err != nil {
 			e.mu.Lock()
 			// Ensure we release all endpoint registration and route
-			// references as the connection is now in an error
-			// state.
+			// references as the connection is now in an error state.
 			e.workerCleanup = true
 			e.resetConnectionLocked(err)
 			// Lock released below.

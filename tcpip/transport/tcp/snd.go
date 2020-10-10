@@ -142,11 +142,12 @@ type sender struct {
 	// sndNxtList is the sequence number of the next segment to be added to the send list.
 	sndNxtList seqnum.Value
 
-	// rttMeasureSeqNum is the sequence number being used for the latest RTT
-	// measurement.
+	// rttMeasureSeqNum is the sequence number being used for the latest RTT measurement.
+	// rttMeasureSeqNum 是用于测量 RTT 的最新序列号。
 	rttMeasureSeqNum seqnum.Value
 
 	// rttMeasureTime is the time when the rttMeasureSeqNum was sent.
+	// rttMeasureTime 是发送 rtMeasureSeqNum 的时间。
 	rttMeasureTime time.Time
 
 	closed      bool
@@ -175,6 +176,7 @@ type sender struct {
 	sndWndScale uint8
 
 	// maxSentAck is the maxium acknowledgement actually sent.
+	// maxSentAck 是实际发送的最大限度的确认。
 	maxSentAck seqnum.Value
 
 	// state is the current state of congestion control for this endpoint.
@@ -1220,6 +1222,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			s.resendTimer.disable()
 		}
 	}
+
 	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
 	//
 	// 现在我们已经从重传队列中弹出了所有已确认的数据，如果需要就重传。
@@ -1238,6 +1241,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 // sendSegment sends the specified segment.
 func (s *sender) sendSegment(seg *segment) *tcpip.Error {
+
 	if !seg.xmitTime.IsZero() {
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
@@ -1245,27 +1249,33 @@ func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
 	}
+
 	seg.xmitTime = time.Now()
+
 	return s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 }
 
-// sendSegmentFromView sends a new segment containing the given payload, flags
-// and sequence number.
+// sendSegmentFromView sends a new segment containing the given payload, flags and sequence number.
+// sendSegmentFromView 发送一个包含给定数据 data 、标志 flags 和序列号 seq 的新 segment 。
 func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
+
+	// 每次发送 segment 都要更新发送时间戳。
 	s.lastSendTime = time.Now()
+
+	// 如果当前 seq 为测量 rtt 的 segment seq，则记录本 segment 的发送时间戳到 s.rttMeasureTime 。
 	if seq == s.rttMeasureSeqNum {
 		s.rttMeasureTime = s.lastSendTime
 	}
 
+	// 获取发送参数：（1）期待接收的段序号；（2）当前接收窗口大小。
 	rcvNxt, rcvWnd := s.ep.rcv.getSendParams()
 
 	// Remember the max sent ack.
 	s.maxSentAck = rcvNxt
 
-	// Every time a packet containing data is sent (including a
-	// retransmission), if SACK is enabled then use the conservative timer
-	// described in RFC6675 Section 4.0, otherwise follow the standard time
-	// described in RFC6298 Section 5.2.
+	// Every time a packet containing data is sent (including a retransmission),
+	// if SACK is enabled then use the conservative timer described in RFC6675 Section 4.0,
+	// otherwise follow the standard time described in RFC6298 Section 5.2.
 	if data.Size() != 0 {
 		if s.ep.sackPermitted {
 			s.resendTimer.enable(s.rto)

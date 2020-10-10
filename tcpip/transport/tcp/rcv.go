@@ -23,25 +23,27 @@ import (
 	"github.com/blastbao/netstack/tcpip/seqnum"
 )
 
-// receiver holds the state necessary to receive TCP segments and turn them
-// into a stream of bytes.
+// receiver holds the state necessary to receive TCP segments and turn them into a stream of bytes.
 //
 // +stateify savable
 type receiver struct {
 
 	ep *endpoint
 
-	// 希望接收的下一个序列号
+	// 接下来要接收的序号
 	rcvNxt seqnum.Value
 
-	// rcvAcc is one beyond the last acceptable sequence number. That is,
-	// the "largest" sequence value that the receiver has announced to the
-	// its peer that it's willing to accept. This may be different than
-	// rcvNxt + rcvWnd if the receive window is reduced; in that case we
-	// have to reduce the window as we receive more data instead of
-	// shrinking it.
+	// rcvAcc is one beyond the last acceptable sequence number.
+	// That is, the "largest" sequence value that the receiver has announced to the
+	// its peer that it's willing to accept.
+	//
+	// This may be different than rcvNxt + rcvWnd if the receive window is reduced;
+	// in that case we have to reduce the window as we receive more data instead of shrinking it.
 	//
 	// rcvAcc 是最后一个可接受的序列号 +1 ，也就是接收者向其 peer 宣布的它愿意接受的 "最大 "序列值。
+	//
+	// //////如果当前窗口大小为 [rcvNxt, rcvNxt+rcvWnd)
+	//
 	rcvAcc seqnum.Value
 
 
@@ -49,8 +51,10 @@ type receiver struct {
 	// 当前接收窗口的大小
 	rcvWnd seqnum.Size
 
+
 	// 本端接收窗口扩大因子，大小是 8 bit，所以其值最大为 255 。
 	rcvWndScale uint8
+
 
 	closed bool
 
@@ -78,6 +82,7 @@ func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale
 // tcp流量控制：判断 segSeq 在窗口內
 func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 
+	// 计算接收窗口： rcvWnd := rcvAcc - rcvNxt
 	rcvWnd := r.rcvNxt.Size(r.rcvAcc)
 	if rcvWnd == 0 {
 		return segLen == 0 && segSeq == r.rcvNxt
@@ -87,24 +92,34 @@ func (r *receiver) acceptable(segSeq seqnum.Value, segLen seqnum.Size) bool {
 }
 
 
-// getSendParams returns the parameters needed by the sender when building
-// segments to send.
+// getSendParams returns the parameters needed by the sender when building segments to send.
+// getSendParams 返回 sender 在构造 segments 时需要的参数：（1）期待接收的段序号 （2）当前接收窗口大小。
 func (r *receiver) getSendParams() (rcvNxt seqnum.Value, rcvWnd seqnum.Size) {
+
 	// Calculate the window size based on the available buffer space.
+	// 根据可用的缓冲空间计算接收窗口大小。
+
+	// 1. 获取当前可用的接收缓冲区大小
 	receiveBufferAvailable := r.ep.receiveBufferAvailable()
+
+	// 2. 根据缓存区大小和 rcvNxt 计算当前能接收的最大序号 rcvAcc
 	acc := r.rcvNxt.Add(seqnum.Size(receiveBufferAvailable))
 	if r.rcvAcc.LessThan(acc) {
 		r.rcvAcc = acc
 	}
-	// Stash away the non-scaled receive window as we use it for measuring
-	// receiver's estimated RTT.
+
+	// Stash away the non-scaled receive window as we use it for measuring receiver's estimated RTT.
+	// 收起 non-scaled 的接收窗口，因为我们用它来测量接收器的估计 RTT 。
+
+	// 3. 计算当前接收窗口大小
 	r.rcvWnd = r.rcvNxt.Size(r.rcvAcc)
+
+	// 4. 返回（1）期待接收的段序号；（2）当前接收窗口大小。
 	return r.rcvNxt, r.rcvWnd >> r.rcvWndScale
 }
 
 // nonZeroWindow is called when the receive window grows from zero to nonzero;
-// in such cases we may need to send an ack to indicate to our peer that it can
-// resume sending data.
+// in such cases we may need to send an ack to indicate to our peer that it can resume sending data.
 //
 // tcp 流量控制：当接收窗口从零增长到非零时，调用 nonZeroWindow；在这种情况下，我们可能需要发送一个 ack，以便向对端表明它可以恢复发送数据。
 func (r *receiver) nonZeroWindow() {
@@ -132,9 +147,9 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 
 	if segLen > 0 {
 
-		// If the segment doesn't include the seqnum we're expecting to
-		// consume now, we're missing a segment.
+		// If the segment doesn't include the seqnum we're expecting to consume now, we're missing a segment.
 		// We cannot proceed until we receive that segment though.
+		//
 		if !r.rcvNxt.InWindow(segSeq, segLen) {
 			return false
 		}

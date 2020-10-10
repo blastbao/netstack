@@ -20,15 +20,13 @@ import (
 )
 
 const (
-	// MaxSACKBlocks is the maximum number of SACK blocks stored
-	// at receiver side.
+	// MaxSACKBlocks is the maximum number of SACK blocks stored at receiver side.
 	MaxSACKBlocks = 6
 )
 
-// UpdateSACKBlocks updates the list of SACK blocks to include the segment
-// specified by segStart->segEnd. If the segment happens to be an out of order
-// delivery then the first block in the sack.blocks always includes the
-// segment identified by segStart->segEnd.
+// UpdateSACKBlocks updates the list of SACK blocks to include the segment specified by segStart->segEnd.
+// If the segment happens to be an out of order delivery then the first block in the sack.blocks always
+// includes the segment identified by segStart->segEnd.
 func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value, rcvNxt seqnum.Value) {
 	newSB := header.SACKBlock{Start: segStart, End: segEnd}
 

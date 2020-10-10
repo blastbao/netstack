@@ -116,7 +116,7 @@ func (s EndpointState) String() string {
 
 // Reasons for notifying the protocol goroutine.
 const (
-	notifyNonZeroReceiveWindow = 1 << iota
+	notifyNonZeroReceiveWindow = 1 << iota //
 	notifyReceiveWindowChanged
 	notifyClose
 	notifyMTUChanged
@@ -133,71 +133,80 @@ const (
 )
 
 // SACKInfo holds TCP SACK related information for a given endpoint.
+// SACKInfo 保存了给定端点的 TCP SACK 相关信息。
 //
 // +stateify savable
 type SACKInfo struct {
-
 	// Blocks is the maximum number of SACK blocks we track per endpoint.
+	// Blocks 是我们跟踪每个端点的最大 SACK 块数。
 	Blocks [MaxSACKBlocks]header.SACKBlock
 
 	// NumBlocks is the number of valid SACK blocks stored in the blocks array above.
+	// NumBlocks 是指存储在上述块数组中的有效 SACK 块的数量。
 	NumBlocks int
 
 }
 
-// rcvBufAutoTuneParams are used to hold state variables to compute
-// the auto tuned recv buffer size.
+// rcvBufAutoTuneParams are used to hold state variables to compute the auto tuned recv buffer size.
+// rcvBufAutoTuneParams 用于保存状态变量，以计算自动调整的 recv 缓冲区大小。
 //
 // +stateify savable
 type rcvBufAutoTuneParams struct {
 
-
 	// measureTime is the time at which the current measurement was started.
+	// measureTime 是当前测量开始的时间。
 	measureTime time.Time
 
-
 	// copied is the number of bytes copied out of the receive buffers since this measure began.
+	// copied 是指自本次测量开始后，从接收缓冲区复制出来的字节数。
 	copied int
 
-
 	// prevCopied is the number of bytes copied out of the receive buffers in the previous RTT period.
+	// prevCopied 是指在上一个 RTT 期间从接收缓冲区复制出来的字节数。
 	prevCopied int
-
 
 	// rtt is the non-smoothed minimum RTT as measured by observing the time between when a byte is first acknowledged
 	// and the receipt of data that is at least one window beyond the sequence number that was acknowledged.
+	//
+	// rtt 是非平滑的最小 RTT ，通过观察一个字节第一次被 ACK 到收到至少一个超出被确认的序列号的数据之间的时间来测量。
 	rtt time.Duration
 
-
 	// rttMeasureSeqNumber is the highest acceptable sequence number at the time this RTT measurement period began.
+	// rttMeasureSeqNumber 是本次 RTT 测量周期开始时的最高可接受序列号。
 	rttMeasureSeqNumber seqnum.Value
 
-
 	// rttMeasureTime is the absolute time at which the current rtt measurement period began.
+	// rttMeasureTime 是当前 rtt 测量周期开始的绝对时间。
 	rttMeasureTime time.Time
 
-
 	// disabled is true if an explicit receive buffer is set for the endpoint.
+	// 如果为端点设置了固定的接收缓冲区，则 disabled 为真。
 	disabled bool
 }
 
 // ReceiveErrors collect segment receive errors within transport layer.
+// ReceiveErrors 收集传输层内的 segment 接收错误。
 type ReceiveErrors struct {
 	tcpip.ReceiveErrors
 
 	// SegmentQueueDropped is the number of segments dropped due to a full segment queue.
+	// SegmentQueueDropped 是指由于段队列满而丢弃的 segment 数。
 	SegmentQueueDropped tcpip.StatCounter
 
 	// ChecksumErrors is the number of segments dropped due to bad checksums.
+	// ChecksumErrors 是指由于校验和错误而丢失的 segment 数。
 	ChecksumErrors tcpip.StatCounter
 
 	// ListenOverflowSynDrop is the number of times the listen queue overflowed and a SYN was dropped.
+	// ListenOverflowSynDrop 是监听队列溢出和 SYN 被丢弃的次数。
 	ListenOverflowSynDrop tcpip.StatCounter
 
 	// ListenOverflowAckDrop is the number of times the final ACK in the handshake was dropped due to overflow.
+	// ListenOverflowAckDrop 是指握手中最后一次 ACK 因溢出而丢弃的次数。
 	ListenOverflowAckDrop tcpip.StatCounter
 
 	// ZeroRcvWindowState is the number of times we advertised a zero receive window when rcvList is full.
+	// 零接收窗口状态（ZeroRcvWindowState）是指当 rcvList 已满时，我们报告零接收窗口的次数。
 	ZeroRcvWindowState tcpip.StatCounter
 }
 
@@ -577,8 +586,8 @@ func (e *endpoint) ResumeWork() {
 	e.workMu.Unlock()
 }
 
-// keepalive is a synchronization wrapper used to appease stateify. See the
-// comment in endpoint, where it is used.
+// keepalive is a synchronization wrapper used to appease stateify.
+// See the comment in endpoint, where it is used.
 //
 // +stateify savable
 type keepalive struct {
@@ -610,9 +619,9 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 		reuseAddr:   true,
 		keepalive: keepalive{
 			// Linux defaults.
-			idle:     2 * time.Hour,
-			interval: 75 * time.Second,
-			count:    9,
+			idle:     2 * time.Hour,		//
+			interval: 75 * time.Second,		//
+			count:    9,					//
 		},
 		uniqueID: s.UniqueID(),
 	}
@@ -1384,6 +1393,7 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 		e.notifyProtocolGoroutine(notifyKeepaliveChanged)
 		return nil
 
+	// 设置未 ack 的 keepalive 报文的最大数目，超过则 close 。
 	case tcpip.KeepaliveCountOption:
 		e.keepalive.Lock()
 		e.keepalive.count = int(v)
@@ -2288,10 +2298,9 @@ func (e *endpoint) readyToRead(s *segment) {
 	if s != nil {
 		s.incRef()
 		e.rcvBufUsed += s.data.Size()
-		// Check if the receive window is now closed. If so make sure
-		// we set the zero window before we deliver the segment to ensure
-		// that a subsequent read of the segment will correctly trigger
-		// a non-zero notification.
+		// Check if the receive window is now closed.
+		// If so make sure we set the zero window before we deliver the segment to ensure
+		// that a subsequent read of the segment will correctly trigger a non-zero notification.
 		if avail := e.receiveBufferAvailableLocked(); avail>>e.rcv.rcvWndScale == 0 {
 			e.stats.ReceiveErrors.ZeroRcvWindowState.Increment()
 			e.zeroWindow = true
