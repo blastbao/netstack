@@ -98,13 +98,11 @@ type handshake struct {
 	// mss 从对端收到的最大报文段大小。
 	mss uint16
 
-
-	// sndWndScale is the send window scale, as defined in RFC 1323. A
-	// negative value means no scaling is supported by the peer.
+	// sndWndScale is the send window scale, as defined in RFC 1323.
+	// A negative value means no scaling is supported by the peer.
 	//
 	// 对端接收窗口扩大因子。负值表示对端不支持扩大。
 	sndWndScale int
-
 
 	// rcvWndScale is the receive window scale, as defined in RFC 1323.
 	//
@@ -114,23 +112,25 @@ type handshake struct {
 
 func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
 
+	// 计算接收窗口缩放比例
 	rcvWndScale := ep.rcvWndScaleForHandshake()
 
 	// Round-down the rcvWnd to a multiple of wndScale. This ensures that the
 	// window offered in SYN won't be reduced due to the loss of precision if
 	// window scaling is enabled after the handshake.
 	//
-	// 将 rcvWnd 四舍五入到 wndScale 的倍数。
+	// 将接收窗口 rcvWnd 按 rcvWndScale 进行缩放，并对齐
 	rcvWnd = (rcvWnd >> uint8(rcvWndScale)) << uint8(rcvWndScale)
 
 	// Ensure we can always accept at least 1 byte if the scale specified
 	// was too high for the provided rcvWnd.
 	//
-	// 如果 rcvWndScale 相比 rcvWnd 来说太高，则需要设置至少1个字节。
+	// 如果 rcvWndScale 相比 rcvWnd 来说太高，则需要设置至少 1 个字节。
 	if rcvWnd == 0 {
 		rcvWnd = 1
 	}
 
+	//
 	h := handshake{
 		ep:          ep,
 		active:      true,
@@ -143,12 +143,20 @@ func newHandshake(ep *endpoint, rcvWnd seqnum.Size) handshake {
 }
 
 // FindWndScale determines the window scale to use for the given maximum window size.
+//
+// FindWndScale() 根据给定的最大窗口大小 wnd 确定窗口的缩放比例。
+//
+// 备注：
+//  0xffff  = 65535
+//  0x10000 = 65536
 func FindWndScale(wnd seqnum.Size) int {
 
+	// 如果最大窗口 wnd < 65536 ，则不缩放，返回 0 。
 	if wnd < 0x10000 {
 		return 0
 	}
 
+	// 不断用 0xffff 乘 s++ 去逼近 wnd ，最后估算出 wnd 是 0xffff 的 s 倍，得到缩放倍数 s 。
 	max := seqnum.Size(0xffff)
 	s := 0
 	for wnd > max && s < header.MaxWndScale {
@@ -169,6 +177,7 @@ func (h *handshake) resetState() {
 		panic(err)
 	}
 
+	//
 	h.state = handshakeSynSent
 	h.flags = header.TCPFlagSyn
 	h.ackNum = 0
@@ -207,10 +216,12 @@ func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
 // If the peer doesn't support window scaling, the effective rcv wnd scale is
 // zero; otherwise it's the value calculated based on the initial rcv wnd.
 func (h *handshake) effectiveRcvWndScale() uint8 {
+
 	// 如果对端接收窗口扩大因子为负数，则不支持窗口扩大。
 	if h.sndWndScale < 0 {
 		return 0
 	}
+
 	return uint8(h.rcvWndScale)
 }
 
@@ -316,15 +327,16 @@ func (h *handshake) synSentState(s *segment) *tcpip.Error {
 		TSVal: h.ep.timestamp(),
 		TSEcr: h.ep.recentTS,
 
-		// We only send SACKPermitted if the other side indicated it
-		// permits SACK. This is not explicitly defined in the RFC but
-		// this is the behaviour implemented by Linux.
+		// We only send SACKPermitted if the other side indicated it permits SACK.
+		// This is not explicitly defined in the RFC but this is the behaviour implemented by Linux.
 		SACKPermitted: rcvSynOpts.SACKPermitted,
 		MSS:           h.ep.amss,
 	}
 	if ttl == 0 {
 		ttl = s.route.DefaultTTL()
 	}
+
+	//
 	h.ep.sendSynTCP(&s.route, h.ep.ID, ttl, h.ep.sendTOS, h.flags, h.iss, h.ackNum, h.rcvWnd, synOpts)
 	return nil
 }
@@ -1524,12 +1536,13 @@ func (e *endpoint) protocolMainLoop(handshake bool) *tcpip.Error {
 	e.mu.Unlock()
 	var reuseTW func()
 	if state == StateTimeWait {
+
 		// Disable close timer as we now entering real TIME_WAIT.
 		if closeTimer != nil {
 			closeTimer.Stop()
 		}
-		// Mark the current sleeper done so as to free all associated
-		// wakers.
+
+		// Mark the current sleeper done so as to free all associated wakers.
 		s.Done()
 		// Wake up any waiters before we enter TIME_WAIT.
 		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.EventIn | waiter.EventOut)
@@ -1622,8 +1635,9 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 // done in cases where a new SYN is received during TIME_WAIT that carries
 // a sequence number larger than one see on the connection.
 func (e *endpoint) doTimeWait() (twReuse func()) {
-	// Trigger a 2 * MSL time wait state. During this period
-	// we will drop all incoming segments.
+
+	// Trigger a 2 * MSL time wait state.
+	// During this period we will drop all incoming segments.
 	// NOTE: On Linux this is not configurable and is fixed at 60 seconds.
 	timeWaitDuration := DefaultTCPTimeWaitTimeout
 
@@ -1660,21 +1674,23 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 				timeWaitTimer.Reset(timeWaitDuration)
 			}
 		case notification:
+
 			n := e.fetchNotifications()
 			if n&notifyClose != 0 {
 				return nil
 			}
+
 			if n&notifyDrain != 0 {
 				for !e.segmentQueue.empty() {
-					// Ignore extending TIME_WAIT during a
-					// save. For sockets in TIME_WAIT we just
-					// terminate the TIME_WAIT early.
+					// Ignore extending TIME_WAIT during a save.
+					// For sockets in TIME_WAIT we just terminate the TIME_WAIT early.
 					e.handleTimeWaitSegments()
 				}
 				close(e.drainDone)
 				<-e.undrain
 				return nil
 			}
+
 		case timeWaitDone:
 			return nil
 		}

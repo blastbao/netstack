@@ -856,21 +856,26 @@ func (e *endpoint) initialReceiveWindow() int {
 // ModerateRecvBuf adjusts the receive buffer and the advertised window
 // based on the number of bytes copied to user space.
 func (e *endpoint) ModerateRecvBuf(copied int) {
+
+
 	e.rcvListMu.Lock()
 	if e.rcvAutoParams.disabled {
 		e.rcvListMu.Unlock()
 		return
 	}
+
 	now := time.Now()
 	if rtt := e.rcvAutoParams.rtt; rtt == 0 || now.Sub(e.rcvAutoParams.measureTime) < rtt {
 		e.rcvAutoParams.copied += copied
 		e.rcvListMu.Unlock()
 		return
 	}
+
 	prevRTTCopied := e.rcvAutoParams.copied + copied
 	prevCopied := e.rcvAutoParams.prevCopied
 	rcvWnd := 0
 	if prevRTTCopied > prevCopied {
+
 		// The minimal receive window based on what was copied by the app
 		// in the immediate preceding RTT and some extra buffer for 16
 		// segments to account for variations.
@@ -891,8 +896,7 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 			rcvWnd = minRcvWnd
 		}
 
-		// Cap the auto tuned buffer size by the maximum permissible
-		// receive buffer size.
+		// Cap the auto tuned buffer size by the maximum permissible receive buffer size.
 		if max := e.maxReceiveBufferSize(); rcvWnd > max {
 			rcvWnd = max
 		}
@@ -916,6 +920,7 @@ func (e *endpoint) ModerateRecvBuf(copied int) {
 	e.rcvListMu.Unlock()
 }
 
+
 // IPTables implements tcpip.Endpoint.IPTables.
 func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
@@ -930,8 +935,16 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 	// but has some pending unread data. Also note that a RST being received
 	// would cause the state to become StateError so we should allow the
 	// reads to proceed before returning a ECONNRESET.
+
+	// 如果端点已经连接，或者已经关闭但仍有些待读取的未读数据，就可以读取。
+	// 要注意的是，如果接收到 RST ，会导致状态变成 StateError ，我们应该在返回E CONNRESET 之前允许读取进行。
+
 	e.rcvListMu.Lock()
+
+	// 获取已接收字节数
 	bufUsed := e.rcvBufUsed
+
+	// 状态检查
 	if s := e.state; !s.connected() && s != StateClose && bufUsed == 0 {
 		e.rcvListMu.Unlock()
 		he := e.HardError
@@ -943,6 +956,7 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidEndpointState
 	}
 
+	// 读取数据
 	v, err := e.readLocked()
 	e.rcvListMu.Unlock()
 
@@ -957,24 +971,27 @@ func (e *endpoint) Read(*tcpip.FullAddress) (buffer.View, tcpip.ControlMessages,
 // 从 tcp 的接收队列中读取数据，并从接收队列中删除已读数据
 func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 
-
+	// 无数据可读
 	if e.rcvBufUsed == 0 {
+		// 检查是否已关闭，若是则返回 ErrClosed
 		if e.rcvClosed || !e.state.connected() {
 			return buffer.View{}, tcpip.ErrClosedForReceive
 		}
+		// 返回 ErrWouldBlock
 		return buffer.View{}, tcpip.ErrWouldBlock
 	}
 
+	// 从接收队列 rcvList 中取出一个 segment s，然后从 s 中取出一个字节切片 v 。
 	s := e.rcvList.Front()
 	views := s.data.Views()
-	v := views[s.viewToDeliver]
-	s.viewToDeliver++
-
-	if s.viewToDeliver >= len(views) {
+	v := views[s.viewToDeliver]         // 从 s 中读取一个未读的字节切片 v
+	s.viewToDeliver++					// 更新 s 中已读 view 的下标，以便下次读取新的 view
+	if s.viewToDeliver >= len(views) {  // 如果 s 中所有 view 已被读完，则从 e.rcvList 中移除 s 。
 		e.rcvList.Remove(s)
 		s.decRef()
 	}
 
+	// 读出 v 后，释放 len(v) 字节的接收缓冲空间
 	e.rcvBufUsed -= len(v)
 
 	// If the window was zero before this read and if the read freed up
@@ -986,7 +1003,6 @@ func (e *endpoint) readLocked() (buffer.View, *tcpip.Error) {
 		e.zeroWindow = false
 		e.notifyProtocolGoroutine(notifyNonZeroReceiveWindow)
 	}
-
 
 	return v, nil
 }
@@ -1226,8 +1242,7 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOpt, v int) *tcpip.Error {
 
 		e.rcvListMu.Lock()
 
-		// Make sure the receive buffer size allows us to send a
-		// non-zero window size.
+		// Make sure the receive buffer size allows us to send a non-zero window size.
 		scale := uint8(0)
 		if e.rcv != nil {
 			scale = e.rcv.rcvWndScale
@@ -2361,16 +2376,24 @@ func (e *endpoint) maxReceiveBufferSize() int {
 // disabled then the window scaling factor is based on the size of the
 // receiveBuffer otherwise we use the max permissible receive buffer size to
 // compute the scale.
+//
+// 当启用窗口缩放时，用 rcvWndScaleForHandshake() 计算接收窗口的缩放比例。
 func (e *endpoint) rcvWndScaleForHandshake() int {
+
+	// 获取接收缓冲区大小
 	bufSizeForScale := e.receiveBufferSize()
 
+	// 是否设置为固定大小的接收缓冲区
 	e.rcvListMu.Lock()
 	autoTuningDisabled := e.rcvAutoParams.disabled
 	e.rcvListMu.Unlock()
+
+	// 若为固定大小的接收缓冲区，则用固定缓冲区大小计算缩放比例。
 	if autoTuningDisabled {
 		return FindWndScale(seqnum.Size(bufSizeForScale))
 	}
 
+	// 若为动态调整的接收缓冲区，则用最大缓冲区大小计算缩放比例。
 	return FindWndScale(seqnum.Size(e.maxReceiveBufferSize()))
 }
 

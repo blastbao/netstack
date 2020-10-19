@@ -66,7 +66,6 @@ var (
 	// 允许处于 SYN-RCVD 状态的全局最大连接数。这个导出变量只用于测试，正常情况下不应该被包的引入者使用。
 	SynRcvdCountThreshold uint64 = 1000
 
-
 	// mssTable is a slice containing the possible MSS values that we
 	// encode in the SYN cookie with two bits.
 	//
@@ -496,6 +495,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 
 	// 如果 s 为 SYN-ACK 报文，直接回复 RST ，否则若回复 ACK ，会完成旧的握手，建立错误连接。
 	if s.flagsAreSet(header.TCPFlagSyn | header.TCPFlagAck) {
+
 		// RFC 793 section 3.4 page 35 (figure 12) outlines that a RST
 		// must be sent in response to a SYN-ACK while in the listen
 		// state to prevent completing a handshake from an old SYN.
@@ -521,10 +521,10 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 
 	// TODO(b/143300739): Use the userMSS of the listening socket for accepted sockets.
 
-
 	// 至此，只有可能是 Syn 或者 Ack 报文。
 
 	switch {
+
 	// 如果是 SYN 报文，说明该连接处于三步握手的第一步。
 	//
 	// 为什么不是第二步？因为这是 Listen 函数，当前处于连接的被动方。
@@ -532,6 +532,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 	// 这里会有一个队列，称为 SYN_RCVD 队列或半连接队列，长度为 max(64,/proc/sys/net/ipv4/tcp_max_syn_backlog) 。
 	// 当 SYN_RCVD 队列满了，在不开启 syncookies 的时候，Server 会丢弃新来的 SYN 包，而 Client 端在多次重发 SYN 包
 	// 得不到响应而返回（connection time out）错误。
+	//
 	// 但是，当 Server 端开启了 syncookies=1，那么 SYN 半连接队列就没有逻辑上的最大值了，
 	// 并且 /proc/sys/net/ipv4/tcp_max_syn_backlog 设置的值也会被忽略。
 	//
@@ -735,6 +736,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 	// 构造 listen 上下文
 	ctx := newListenContext(e.stack, e, rcvWnd, v6only, e.NetProto)
 
+	// 退出时，执行清理逻辑
 	defer func() {
 
 		// Mark endpoint as closed.
@@ -765,7 +767,7 @@ func (e *endpoint) protocolListenLoop(rcvWnd seqnum.Size) *tcpip.Error {
 
 	}()
 
-
+	// 监听定时事件，执行回调逻辑
 	s := sleep.Sleeper{}
 	s.AddWaker(&e.notificationWaker, wakerForNotification)
 	s.AddWaker(&e.newSegmentWaker, wakerForNewSegment)

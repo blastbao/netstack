@@ -32,7 +32,6 @@ type receiver struct {
 
 
 
-
 	//						 +-------> sndWnd <-------+
 	//						 |                        |
 	//	---------------------+-------------+----------+--------------------
@@ -41,8 +40,6 @@ type receiver struct {
 	//						 ^             ^
 	//						 |             |
 	// 					   sndUna        sndNxt
-
-
 
 
 	// 接下来要接收的序号
@@ -57,7 +54,7 @@ type receiver struct {
 	//
 	// rcvAcc 是最后一个可接受的序列号 +1 ，也就是接收者向其 peer 宣布的它愿意接受的 "最大 "序列值。
 	//
-	// //////如果当前窗口大小为 [rcvNxt, rcvNxt+rcvWnd)
+	// ////// 如果当前窗口大小为 [rcvNxt, rcvNxt+rcvWnd)
 	//
 	rcvAcc seqnum.Value
 
@@ -66,10 +63,8 @@ type receiver struct {
 	// 当前接收窗口的大小
 	rcvWnd seqnum.Size
 
-
 	// 本端接收窗口扩大因子，大小是 8 bit，所以其值最大为 255 。
 	rcvWndScale uint8
-
 
 	closed bool
 
@@ -317,24 +312,33 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 
 	// If we are in one of the shutdown states then we need to do
 	// additional checks before we try and process the segment.
+
+	// 如果当前处于 `shutdown` 状态，在尝试处理 s 之前，需要做额外的检查。
 	switch state {
+	// 这些状态意味着已接收到对端的 FIN 报文，其已经结束数据发送，所以不再读取新数据。
 	case StateCloseWait, StateClosing, StateLastAck:
 		if !s.sequenceNumber.LessThanEq(r.rcvNxt) {
 			s.decRef()
-			// Just drop the segment as we have
-			// already received a FIN and this
-			// segment is after the sequence number
-			// for the FIN.
+			// Just drop the segment as we have already received a FIN and
+			// this segment is after the sequence number for the FIN.
+			//
+			// 丢弃 s ，因为已收到 FIN 报文，且 s 是在 FIN 报文序列号之后。
 			return true, nil
 		}
 		fallthrough
+
+	//
 	case StateFinWait1:
 		fallthrough
+
+	//
 	case StateFinWait2:
-		// If we are closed for reads (either due to an
-		// incoming FIN or the user calling shutdown(..,
-		// SHUT_RD) then any data past the rcvNxt should
-		// trigger a RST.
+
+		// If we are closed for reads (either due to an incoming FIN or the user calling shutdown(..,
+		// SHUT_RD) then any data past the rcvNxt should trigger a RST.
+		//
+		//
+		//
 		endDataSeq := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
 		if rcvClosed && r.rcvNxt.LessThan(endDataSeq) {
 			s.decRef()
@@ -372,17 +376,21 @@ func (r *receiver) handleRcvdSegmentClosing(s *segment, state EndpointState, clo
 		}
 	}
 
+
 	// We don't care about receive processing anymore if the receive side is closed.
 	//
 	// NOTE: We still want to permit a FIN as it's possible only our
 	// end has closed and the peer is yet to send a FIN.
 	// Hence we compare only the payload.
+
 	segEnd := s.sequenceNumber.Add(seqnum.Size(s.data.Size()))
 	if rcvClosed && !segEnd.LessThanEq(r.rcvNxt) {
 		return true, nil
 	}
+
 	return false, nil
 }
+
 
 // handleRcvdSegment handles TCP segments directed at the connection managed by r as they arrive.
 // It is called by the protocol main loop.
@@ -397,7 +405,7 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	closed := r.ep.closed
 	r.ep.mu.RUnlock()
 
-	// 检查 e.state 是否是 "已经建立"
+	// 检查 e.state 是否是 "已经建立"，若非则丢弃 segment 。
 	if state != StateEstablished {
 		//
 		drop, err := r.handleRcvdSegmentClosing(s, state, closed)
