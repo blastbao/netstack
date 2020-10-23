@@ -65,7 +65,7 @@ type receiver struct {
 
 
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
-	// 当前接收窗口的大小
+	// 当前接收窗口的大小，
 	rcvWnd seqnum.Size
 
 	// 本端接收窗口扩大因子，大小是 8 bit，所以其值最大为 255 。

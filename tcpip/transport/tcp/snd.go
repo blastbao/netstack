@@ -110,11 +110,16 @@ type sender struct {
 	fr fastRecovery
 
 	// sndCwnd is the congestion window, in packets.
-	// 拥塞窗口。
+	// 拥塞窗口，它是对发送端收到确认(ACK)前能向网络传送的最大数据量的限制。
 	sndCwnd int
 
 	// sndSsthresh is the threshold between slow start and congestion avoidance.
-	// sndSsthresh 是慢启动和避免拥塞之间的阈值。
+	//
+	// 慢启动阈值，用于确定是用慢启动还是拥塞避免算法来控制数据传送，具体用法如下:
+	// 	当 cwnd < ssthresh 时，使用慢启动算法；
+	// 	当 cwnd > ssthresh 时，使用拥塞避免算法；
+	// 	当 cwnd = ssthresh 时，发送端既可以使用慢启动也可以使用拥塞避免。
+	// ssthresh 的初始值可以任意大(比如，一些实现中使用接收端通知窗口 rcvWnd 的d大小)，但是一旦对拥塞响应之后，其大小可能会被减小。
 	sndSsthresh int
 
 	// sndCAAckCount is the number of packets acknowledged during congestion
@@ -1231,6 +1236,8 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 		s.dupAckCount = 0
 		return false
 	}
+
+
 	s.cc.HandleNDupAcks()
 	s.enterFastRecovery()
 	s.dupAckCount = 0
