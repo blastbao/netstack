@@ -32,6 +32,7 @@ const (
 	minRTO = 200 * time.Millisecond
 
 	// InitialCwnd is the initial congestion window.
+	// 初始拥塞窗口。
 	InitialCwnd = 10
 
 	// nDupAckThreshold is the number of duplicate ACK's required
@@ -64,21 +65,31 @@ const (
 // congestionControl is an interface that must be implemented by any supported
 // congestion control algorithm.
 type congestionControl interface {
+
 	// HandleNDupAcks is invoked when sender.dupAckCount >= nDupAckThreshold
 	// just before entering fast retransmit.
+	//
+	// 当 sender.dupAckCount >= nDupAckThreshold 刚好进入快速重传之前，将调用 HandleNDupAcks 。
 	HandleNDupAcks()
 
 	// HandleRTOExpired is invoked when the retransmit timer expires.
+	//
+	// 重传计时器到期时，将调用 HandleRTOExpired 。
 	HandleRTOExpired()
 
 	// Update is invoked when processing inbound acks. It's passed the
 	// number of packet's that were acked by the most recent cumulative
 	// acknowledgement.
+	//
+	// Update 是在处理入栈的 ACK 时调用的，它的入参是最近累积的 ACK 。
 	Update(packetsAcked int)
 
 	// PostRecovery is invoked when the sender is exiting a fast retransmit/
 	// recovery phase. This provides congestion control algorithms a way
 	// to adjust their state when exiting recovery.
+	//
+	// 当发送方退出 快重传/快恢复 阶段时，将调用 PostRecovery 。
+	// 这为拥塞控制算法提供了一种在退出恢复时调整其状态的方法。
 	PostRecovery()
 }
 
@@ -99,10 +110,11 @@ type sender struct {
 	fr fastRecovery
 
 	// sndCwnd is the congestion window, in packets.
+	// 拥塞窗口。
 	sndCwnd int
 
-	// sndSsthresh is the threshold between slow start and congestion
-	// avoidance.
+	// sndSsthresh is the threshold between slow start and congestion avoidance.
+	// sndSsthresh 是慢启动和避免拥塞之间的阈值。
 	sndSsthresh int
 
 	// sndCAAckCount is the number of packets acknowledged during congestion
@@ -112,9 +124,9 @@ type sender struct {
 
 	// outstanding is the number of outstanding packets, that is, packets
 	// that have been sent but not yet acknowledged.
+	//
+	// outstanding 是已发送但尚未被确认的数据包。
 	outstanding int
-
-
 
 
 	//						 +-------> sndWnd <-------+
@@ -127,12 +139,10 @@ type sender struct {
 	// 					   sndUna        sndNxt
 	//
 	//
-	// (-, sndUna) : old sequence numbers which have been acknowledged
-	// [sndUna, sndNxt) : sequence numbers of unacknowledged data
-	// [sndNxt, sndUna + sndWnd) : sequence numbers allowed for new data transmission
-	// [sndUna + sndWnd, -) : future sequence numbers which are not yet allowed
-	//
-	//
+	// (-, sndUna) 					: old sequence numbers which have been acknowledged
+	// [sndUna, sndNxt) 			: sequence numbers of unacknowledged data
+	// [sndNxt, sndUna + sndWnd) 	: sequence numbers allowed for new data transmission
+	// [sndUna + sndWnd, -) 		: future sequence numbers which are not yet allowed
 	//
 
 
@@ -219,9 +229,11 @@ type rtt struct {
 }
 
 // fastRecovery holds information related to fast recovery from a packet loss.
+// fastRecovery 保存了与数据包丢失后快速恢复相关的信息。
 //
 // +stateify savable
 type fastRecovery struct {
+
 	// active whether the endpoint is in fast recovery. The following fields
 	// are only meaningful when active is true.
 	active bool
@@ -304,9 +316,12 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // initCongestionControl initializes the specified congestion control module and
 // returns a handle to it. It also initializes the sndCwnd and sndSsThresh to
 // their initial values.
+//
+// initCongestionControl 初始化拥塞控制模块并返回一个接口。
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
-	s.sndCwnd = InitialCwnd
-	s.sndSsthresh = math.MaxInt64
+
+	s.sndCwnd = InitialCwnd				// 初始拥塞窗口。
+	s.sndSsthresh = math.MaxInt64 		// 慢启动和拥塞避免之间的阈值。
 
 	switch congestionControlName {
 	case ccCubic:
@@ -548,15 +563,23 @@ func (s *sender) pCount(seg *segment) int {
 
 // splitSeg splits a given segment at the size specified and inserts the
 // remainder as a new segment after the current one in the write list.
+//
+// splitSeg 以指定的大小分割一个给定的段，并将剩余的段作为一个新段插入到写列表中的当前段之后。
 func (s *sender) splitSeg(seg *segment, size int) {
+
+	// 参数检查
 	if seg.data.Size() <= size {
 		return
 	}
+
 	// Split this segment up.
+
+	// 拷贝生成新段 nSeg ，删除其前 size 字节后，插入到当前段 seg 后面。
 	nSeg := seg.clone()
 	nSeg.data.TrimFront(size)
 	nSeg.sequenceNumber.UpdateForward(seqnum.Size(size))
 	s.writeList.InsertAfter(seg, nSeg)
+	// 用 size 截断当前 seg ，完成段的分割。
 	seg.data.CapLength(size)
 }
 
@@ -638,11 +661,22 @@ func (s *sender) NextSeg() (nextSeg1, nextSeg3, nextSeg4 *segment) {
 // lower of the specified limit value or the receivers window size specified by
 // end.
 func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
+
+
 	// We abuse the flags field to determine if we have already
 	// assigned a sequence number to this segment.
+
+	// 确定是否已经为该段分配了序列号，如果尚未分配，则分配给它新的序号，并设置 flag 。
 	if !s.isAssignedSequenceNumber(seg) {
+
 		// Merge segments if allowed.
+		// 段合并：将小 seg 合并成大 seg 再发送出去。
+
+		// 若 `eg.data.Size() == 0` 意味着是一个 FIN 段，它是 TCP 连接上的最后一个段，且不含数据，无需合并。
+
 		if seg.data.Size() != 0 {
+
+
 			available := int(seg.sequenceNumber.Size(end))
 			if available > limit {
 				available = limit
@@ -658,20 +692,46 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 			// should be sent in the same TCP segment to avoid
 			// triggering bugs in poorly written DNS
 			// implementations.
+			//
+			//
+			// nextTooBig 表示下一个段太大，无法完全容纳在当前段中。
+			// 可以拆分下个段，并合并适合的部分，但是意外地拆分片段可能会给用户带来明显的副作用，从而破坏应用程序。
+			//
+			// 例如，RFC 7766 第 8 节指出，DNS 响应的长度和数据应该在同一个TCP段中发送，以避免在编写不佳的 DNS 实现中引发 bug 。
+
+			// 执行相邻段的合并，直到合并数据将超过 available 或者无可合并的段为止。
 			var nextTooBig bool
 			for seg.Next() != nil && seg.Next().data.Size() != 0 {
 				if seg.data.Size()+seg.Next().data.Size() > available {
 					nextTooBig = true
 					break
 				}
-				seg.data.Append(seg.Next().data)
-
-				// Consume the segment that we just merged in.
-				s.writeList.Remove(seg.Next())
+				seg.data.Append(seg.Next().data)	// 段的数据合并
+				s.writeList.Remove(seg.Next()) 		// 将已合并段从 s.writeList 中移除    //Consume the segment that we just merged in.
 			}
+
+
+
+
+
+			// 条件判断:
+			// 	(1) nextTooBig == false ，意味着要么 s.writeList 中仅此一个 seg ，要么 s.writeList 中所有 seg 合并后也不足 available 字节。
+			// 	(2) seg.data.Size() < available ，意味着当前 seg 的载荷不足 available 字节。
 			if !nextTooBig && seg.data.Size() < available {
+
 				// Segment is not full.
+				// 至此，当前 segment 不满。
+
+
+				// Nagle 检测
+				//
+				// 条件判断:
+				// 	(1) outstanding > 0 ，意味着存在已发送但尚未被确认的数据包。
+				// 	(2) delay != 0 ，意味着开启 Nagle 算法。
+				//
+				// 此二条件同时发生，意味着满足 Nagle 算法触发条件，当前包应该被缓存，延迟发送。
 				if s.outstanding > 0 && atomic.LoadUint32(&s.ep.delay) != 0 {
+
 					// Nagle's algorithm. From Wikipedia:
 					//   Nagle's algorithm works by
 					//   combining a number of small
@@ -684,69 +744,108 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 					//   has a full packet's worth of
 					//   output, thus allowing output to be
 					//   sent all at once.
+
+					// Nagle 算法的工作原理是将一些小的数据合并起来，然后一次性发出去。
+					// 具体来说，只要存在尚未收到确认的已发送数据包，发送方就应持续缓存待输出数据，
+					// 直到获得一个完整的数据包为止，从而一次性发送这个完整的数据包。
+					//
+					// Nagle 能够有效减少小数据包的发送，提高信道利用率（提高有效数据占比）。
+
 					return false
 				}
+
+				// 如果设置了 cork 标记位，则必须等到 segment 满才能发送。
 				if atomic.LoadUint32(&s.ep.cork) != 0 {
 					// Hold back the segment until full.
 					return false
 				}
+
 			}
 		}
 
-		// Assign flags. We don't do it above so that we can merge
-		// additional data if Nagle holds the segment.
-		seg.sequenceNumber = s.sndNxt
-		seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+		// Assign flags.
+		// We don't do it above so that we can merge additional data if Nagle holds the segment.
+		//
+		// 设置标记位。
+		// 我们不在上面设置，是因为如果 Nagle 持有该段数据，我们可以合并这些额外数据。
+		seg.sequenceNumber = s.sndNxt						// 设置要发送的段的序号
+		seg.flags = header.TCPFlagAck | header.TCPFlagPsh	// 设置 ACK/PSH 标记位
 	}
+
 
 	var segEnd seqnum.Value
 	if seg.data.Size() == 0 {
+
+		// We're sending a FIN segment.
+		// 正在发送 FIN 段。
+
+		// FIN 段必须是写入列表中的最后一个段。
 		if s.writeList.Back() != seg {
 			panic("FIN segments must be the final segment in the write list.")
 		}
+
+		// 设置标记位为 ACK | FIN 。
 		seg.flags = header.TCPFlagAck | header.TCPFlagFin
+
+		// 增加报文序号
 		segEnd = seg.sequenceNumber.Add(1)
+
 		// Transition to FIN-WAIT1 state since we're initiating an active close.
+		// 调整状态机 。
 		s.ep.mu.Lock()
 		switch s.ep.state {
 		case StateCloseWait:
-			// We've already received a FIN and are now sending our own. The
-			// sender is now awaiting a final ACK for this FIN.
+			// We've already received a FIN and are now sending our own.
+			// The sender is now awaiting a final ACK for this FIN.
+			//
+			// 对方主动四次挥手，我们收到了 FIN 则会进入到 CLOSE_WAIT 状态，现在要发送我们自己的 FIN ，并进入状态 LAST_ACK 。
 			s.ep.state = StateLastAck
 		default:
+			// 本方主动四次挥手，进入 FIN-WAIT1 状态。
 			s.ep.state = StateFinWait1
 		}
+
 		s.ep.stack.Stats().TCP.CurrentEstablished.Decrement()
 		s.ep.mu.Unlock()
+
 	} else {
+
 		// We're sending a non-FIN segment.
+		// 正在发送非 FIN 段。
 		if seg.flags&header.TCPFlagFin != 0 {
 			panic("Netstack queues FIN segments without data.")
 		}
 
+		// 要发送的段的序号不能超过发送窗口的最大值
 		if !seg.sequenceNumber.LessThan(end) {
 			return false
 		}
 
+		// 计算发送窗口可容纳的字节数
 		available := int(seg.sequenceNumber.Size(end))
 		if available == 0 {
 			return false
 		}
+
+		// 计算可发送字节数 available = min(available, limit)
 		if available > limit {
 			available = limit
 		}
 
+		// 如果当前 segment 数据量较大，需要拆分成两个段，保存到 s.writeList 中。
 		if seg.data.Size() > available {
 			s.splitSeg(seg, available)
 		}
 
+		// 更新 sndNxt
 		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.data.Size()))
 	}
 
+	//
 	s.sendSegment(seg)
 
-	// Update sndNxt if we actually sent new data (as opposed to
-	// retransmitting some previously sent data).
+	// Update sndNxt if we actually sent new data (as opposed to retransmitting some previously sent data).
+	// 如果确实发送了新数据，则需要更新 sndNxt（而不是重传一些之前发送的数据）。
 	if s.sndNxt.LessThan(segEnd) {
 		s.sndNxt = segEnd
 	}
@@ -828,8 +927,28 @@ func (s *sender) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool)
 	return dataSent
 }
 
+
+
+
 // sendData sends new data segments.
 // It is called when data becomes available or when the send window opens up.
+//
+//
+// sendData
+//    maybeSendSegment
+//        sendSegment
+//            sendSegmentFromView
+//                sendRaw        --connect.go
+//                    sendTCP
+//                        r.WritePacket(gso, hdr, data, ProtocolNumber, ttl)
+//                            WritePacket        --third_party\golibs\github.com\google\netstack\tcpip\stack\route.go
+//                                r.ref.ep.WritePacket //TODO,后面的分析不对，到此截止。
+//                            e.linkEP.WritePacket    --third_party\golibs\github.com\google\netstack\tcpip\link\fdbased\endpoint.go
+//                                rawfile.NonBlockingWrite3    --third_party\golibs\github.com\google\netstack\tcpip\link\rawfile\rawfile_unsafe.go
+//                                    NonBlockingWrite
+//                                        syscall.RawSyscall(syscall.SYS_WRITE, uintptr(fd), uintptr(ptr), uintptr(len(buf)))
+//
+//
 func (s *sender) sendData() {
 
 	// 段的最大有效载荷
@@ -840,13 +959,21 @@ func (s *sender) sendData() {
 		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
 	}
 
-	//
+	// 计算发送窗口 [sndUna, sndUna+sndWnd) 的右端
 	end := s.sndUna.Add(s.sndWnd)
 
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
 	// the retrasmission timeout."
+
+	// TCP 拥塞控制算法的一个已知问题是，它允许在 TCP 闲置相对较长的时间后，发送出暴涨的流量。
+	// 因为，在闲置过程中，TCP 不能使用 ACK 包的时钟来评估拥链路塞情况，导致 TCP 有可能在空闲
+	// 期后向网络中发送一个 cwnd 大小的突发流量。
+	// 在闲置过程中，网络状况可能发生变化，若此时发送超大流量，可能会增加丢包情况。
+
+	// 根据 RFC 5681 第 10 页的规定，如果连接闲置了相对长的时间，再次发送时，
+	// 需要将拥塞窗口减少到 min(InitialCwnd, cwnd)，避免因为拥塞评估的不准确，造成链路丢包。
 	if !s.fr.active && time.Now().Sub(s.lastSendTime) > s.rto {
 		if s.sndCwnd > InitialCwnd {
 			s.sndCwnd = InitialCwnd
@@ -857,24 +984,43 @@ func (s *sender) sendData() {
 
 	// RFC 6675 recovery algorithm step C 1-5.
 	if s.fr.active && s.ep.sackPermitted {
+
+		//
 		dataSent = s.handleSACKRecovery(s.maxPayloadSize, end)
+
 	} else {
+
+
 		for seg := s.writeNext; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
+
+			//
 			cwndLimit := (s.sndCwnd - s.outstanding) * s.maxPayloadSize
+
+			// min(cwndLimit, limit)
 			if cwndLimit < limit {
 				limit = cwndLimit
 			}
+
+			// 判断是否已经分配序号
 			if s.isAssignedSequenceNumber(seg) && s.ep.sackPermitted && s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				continue
 			}
+
+			//
 			if sent := s.maybeSendSegment(seg, limit, end); !sent {
 				break
 			}
+
+			//
 			dataSent = true
 			s.outstanding += s.pCount(seg)
 			s.writeNext = seg.Next()
+
 		}
+
 	}
+
+
 
 	if dataSent {
 		// We sent data, so we should stop the keepalive timer to ensure
@@ -979,6 +1125,10 @@ func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
 // sequencenumber is assigned and that is only done right before we send the
 // segment. As a result any segment that has a non-zero flag has a valid
 // sequence number assigned to it.
+//
+// isAssignedSequenceNumber 依赖于这样的事实，即我们只在序列号被分配后才设置 flags 标志，
+// 而且只有在发送段之前才会完成。因此，任何具有非零标志的段都具有有效的序列号。
+
 func (s *sender) isAssignedSequenceNumber(seg *segment) bool {
 	return seg.flags != 0
 }
@@ -1233,6 +1383,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		// a retransmit timeout, reset outstanding to zero but later
 		// get an ack that cover previously sent data.
 		//
+		// ????
 		// 如果我们得到一个重传超时，将未发送的数据重置为零，但后来得到的 ACK 覆盖了之前发送的数据，那么 s.Outstanding 有可能降到零以下。
 		//
 		if s.outstanding < 0 {
@@ -1283,7 +1434,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 // sendSegment sends the specified segment.
 func (s *sender) sendSegment(seg *segment) *tcpip.Error {
-
+	// seg.xmitTime 是该 seg 的最后一次发送时间，零值表示该 segment 尚未被发送，非零表示此前已发送过，当前为重复发送。
 	if !seg.xmitTime.IsZero() {
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
@@ -1291,9 +1442,9 @@ func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 			s.ep.stack.Stats().TCP.SlowStartRetransmits.Increment()
 		}
 	}
-
+	// 更新 seg 的最后一次发送时间
 	seg.xmitTime = time.Now()
-
+	// 执行 seg 的发送
 	return s.sendSegmentFromView(seg.data, seg.flags, seg.sequenceNumber)
 }
 
@@ -1301,7 +1452,7 @@ func (s *sender) sendSegment(seg *segment) *tcpip.Error {
 // sendSegmentFromView 发送一个包含给定数据 data 、标志 flags 和序列号 seq 的新 segment 。
 func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq seqnum.Value) *tcpip.Error {
 
-	// 每次发送 segment 都要更新发送时间戳。
+	// 每次发送 segment 都要更新 sender 的发送时间戳。
 	s.lastSendTime = time.Now()
 
 	// 如果当前 seq 为测量 rtt 的 segment seq，则记录本 segment 的发送时间戳到 s.rttMeasureTime 。
@@ -1328,5 +1479,7 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq
 		}
 	}
 
+
+	//
 	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)
 }

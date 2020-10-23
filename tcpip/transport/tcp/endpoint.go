@@ -401,6 +401,8 @@ type endpoint struct {
 
 	// sackPermitted is set to true if the peer sends the TCPSACKPermitted
 	// option in the SYN/SYN-ACK.
+	//
+	// 如果 peer 在 SYN/SYN-ACK 中发送 TCPSACKPermitted 选项，则 sackPermitted 设置为 true 。
 	sackPermitted bool
 
 	// sack holds TCP SACK related information for this endpoint.
@@ -414,6 +416,8 @@ type endpoint struct {
 	bindToDevice tcpip.NICID
 
 	// delay enables Nagle's algorithm.
+	//
+	// delay == 1 意味着开启 Nagle 算法。
 	//
 	// delay is a boolean (0 is false) and must be accessed atomically.
 	delay uint32
@@ -431,8 +435,7 @@ type endpoint struct {
 	// options.
 	reuseAddr bool
 
-	// slowAck holds the negated state of quick ack. It is stubbed out and
-	// does nothing.
+	// slowAck holds the negated state of quick ack. It is stubbed out and does nothing.
 	//
 	// slowAck is a boolean (0 is false) and must be accessed atomically.
 	slowAck uint32

@@ -1438,6 +1438,7 @@ func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto t
 		DstAddr: dst,
 		Type:    netProto,
 	}
+
 	fakeHeader := make(header.Ethernet, header.EthernetMinimumSize)
 	fakeHeader.Encode(&ethFields)
 	vv := buffer.View(fakeHeader).ToVectorisedView()
