@@ -125,6 +125,15 @@ type sender struct {
 	//						 ^             ^
 	//						 |             |
 	// 					   sndUna        sndNxt
+	//
+	//
+	// (-, sndUna) : old sequence numbers which have been acknowledged
+	// [sndUna, sndNxt) : sequence numbers of unacknowledged data
+	// [sndNxt, sndUna + sndWnd) : sequence numbers allowed for new data transmission
+	// [sndUna + sndWnd, -) : future sequence numbers which are not yet allowed
+	//
+	//
+	//
 
 
 	// sndWnd is the send window size.
@@ -164,9 +173,20 @@ type sender struct {
 
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
+	//
+	// maxPayloadSize 指定段的最大有效载荷。
 	maxPayloadSize int
 
 	// gso is set if generic segmentation offload is enabled.
+	//
+	// TSO(TCP Segmentation Offload): 是一种利用网卡来对大数据包进行自动分段，降低 CPU 负载的技术。其主要是延迟分段。
+	// GSO(Generic Segmentation Offload): GSO 是协议栈是否推迟分段，在发送到网卡之前判断网卡是否支持 TSO ，如果网卡支持TSO则让网卡分段，否则协议栈分完段再交给驱动。
+	//
+	// 如果 TSO 开启，GSO 会自动开启，以下是 TSO 和 GSO 的组合关系：
+	//  GSO开启，TSO开启: 协议栈推迟分段，并直接传递大数据包到网卡，让网卡自动分段
+	//  GSO开启，TSO关闭: 协议栈推迟分段，在最后发送到网卡前才执行分段
+	//  GSO关闭，TSO开启: 同 GSO 开启， TSO 开启
+	//  GSO关闭，TSO关闭: 不推迟分段，在 tcp_sendmsg 中直接发送 MSS 大小的数据包
 	gso bool
 
 	// sndWndScale is the number of bits to shift left when reading the send
@@ -231,6 +251,7 @@ type fastRecovery struct {
 }
 
 func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
+
 	// The sender MUST reduce the TCP data length to account for any IP or
 	// TCP options that it is including in the packets that it sends.
 	// See: https://tools.ietf.org/html/rfc6691#section-2
@@ -418,12 +439,14 @@ func (s *sender) updateRTO(rtt time.Duration) {
 
 // resendSegment resends the first unacknowledged segment.
 func (s *sender) resendSegment() {
+
 	// Don't use any segments we already sent to measure RTT as they may
 	// have been affected by packets being lost.
 	s.rttMeasureSeqNum = s.sndNxt
 
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
+
 		if seg.data.Size() > s.maxPayloadSize {
 			s.splitSeg(seg, s.maxPayloadSize)
 		}
@@ -809,12 +832,15 @@ func (s *sender) handleSACKRecovery(limit int, end seqnum.Value) (dataSent bool)
 // It is called when data becomes available or when the send window opens up.
 func (s *sender) sendData() {
 
-
+	// 段的最大有效载荷
 	limit := s.maxPayloadSize
+
+	// 如果设置了 gso (通用延迟分段) ，则业务侧可以发送更大的包
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
 	}
 
+	//
 	end := s.sndUna.Add(s.sndWnd)
 
 	// Reduce the congestion window to min(IW, cwnd) per RFC 5681, page 10.
@@ -1242,6 +1268,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
+	//
+	//
+	//
 	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
 		s.sendData()
 	}

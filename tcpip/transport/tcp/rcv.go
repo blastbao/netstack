@@ -30,16 +30,21 @@ type receiver struct {
 
 	ep *endpoint
 
-
-
-	//						 +-------> sndWnd <-------+
+	//
+	//						 +-------> rcvWnd <-------+
 	//						 |                        |
-	//	---------------------+-------------+----------+--------------------
-	//	|      acked         | * * * * * * | # # # # #|   unable send
-	//	---------------------+-------------+----------+--------------------
-	//						 ^             ^
-	//						 |             |
-	// 					   sndUna        sndNxt
+	//	---------------------+------------------------+--------------------
+	//	|      rcved         | * * * * * * * * * *  * |   unrcved
+	//	---------------------+------------------------+--------------------
+	//						 ^                        ^
+	//						 |                        |
+	// 					   rcvNxt                  rcvNxt + rcvWnd
+	//
+	//
+	// Receive Sequence Space
+	//	rcved 	- old sequence numbers which have been acknowledged
+	//  rcvWnd 	- sequence numbers allowed for new reception
+	//  unrcved - future sequence numbers which are not yet allowed
 
 
 	// 接下来要接收的序号
@@ -198,12 +203,17 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 		r.rcvAcc = r.rcvNxt
 	}
 
-	// Trim SACK Blocks to remove any SACK information that covers
-	// sequence numbers that have been consumed.
+
+
+	// Trim SACK Blocks to remove any SACK information that covers sequence numbers that have been consumed.
 	TrimSACKBlockList(&r.ep.sack, r.rcvNxt)
+
+
 
 	// Handle FIN or FIN-ACK.
 	if s.flagIsSet(header.TCPFlagFin) {
+
+
 		r.rcvNxt++
 
 		// Send ACK immediately.
