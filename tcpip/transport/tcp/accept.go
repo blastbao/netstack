@@ -233,6 +233,7 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonc
 }
 
 // createCookie creates a SYN cookie for the given id and incoming sequence number.
+//
 // createCookie 为给定的 id 和传入的序列号创建一个 SYN cookie 。
 func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Value, data uint32) seqnum.Value {
 	// 获取当前时间戳
@@ -243,9 +244,10 @@ func (l *listenContext) createCookie(id stack.TransportEndpointID, seq seqnum.Va
 	return seqnum.Value(v)
 }
 
-// isCookieValid checks if the supplied cookie is valid for the given id and
-// sequence number. If it is, it also returns the data originally encoded in the
-// cookie when createCookie was called.
+// isCookieValid checks if the supplied cookie is valid for the given id and sequence number.
+// If it is, it also returns the data originally encoded in the cookie when createCookie was called.
+//
+// isCookieValid 检查提供的 cookie 对给定 id 和 序列号 是否有效。
 func (l *listenContext) isCookieValid(id stack.TransportEndpointID, cookie seqnum.Value, seq seqnum.Value) (uint32, bool) {
 	ts := timeStamp()
 	v := uint32(cookie) - l.cookieHash(id, 0, 0) - uint32(seq)

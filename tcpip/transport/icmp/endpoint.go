@@ -51,14 +51,14 @@ const (
 type endpoint struct {
 	stack.TransportEndpointInfo
 
-	// The following fields are initialized at creation time and are
-	// immutable.
+	// The following fields are initialized at creation time and are immutable.
+	// 以下字段在创建时初始化，不可更改。
 	stack       *stack.Stack
 	waiterQueue *waiter.Queue
 	uniqueID    uint64
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
+	// The following fields are used to manage the receive queue, and are protected by rcvMu.
+	// 以下字段用于管理接收队列，并受rcvMu保护。
 	rcvMu         sync.Mutex
 	rcvReady      bool
 	rcvList       icmpPacketList
@@ -69,12 +69,15 @@ type endpoint struct {
 	// The following fields are protected by the mu mutex.
 	mu         sync.RWMutex
 	sndBufSize int
+
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
 	state         endpointState
 	route         stack.Route
 	ttl           uint8
 	stats         tcpip.TransportEndpointStats
+
+
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, *tcpip.Error) {

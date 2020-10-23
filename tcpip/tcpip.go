@@ -454,6 +454,7 @@ type Endpoint interface {
 	Stats() EndpointStats
 }
 
+
 // EndpointInfo is the interface implemented by each endpoint info struct.
 type EndpointInfo interface {
 	// IsEndpointInfo is an empty method to implement the tcpip.EndpointInfo

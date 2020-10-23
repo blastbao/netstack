@@ -1108,7 +1108,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 统计重复的数据，如果需要的话进行快速重传。
 	rtx := s.checkDuplicateAck(seg)
 
-
 	// [重要]
 	// 首先要处理接收方的窗口通告，当收到报文时，一定会带有接收窗口 seg.window 和确认号 seg.ackNumber ，
 	// 此时先更新发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
@@ -1182,6 +1181,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			ackLeft -= datalen
 		}
 
+
 		// Update the send buffer usage and notify potential waiters.
 		// 更新发送缓冲区的使用情况，并通知潜在的等待者。
 		s.ep.updateSndBufferUsage(int(acked))
@@ -1202,6 +1202,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			}
 		}
 
+
 		// It is possible for s.outstanding to drop below zero if we get
 		// a retransmit timeout, reset outstanding to zero but later
 		// get an ack that cover previously sent data.
@@ -1212,7 +1213,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			s.outstanding = 0
 		}
 
+
 		s.SetPipe()
+
 
 		// If all outstanding data was acknowledged the disable the timer. RFC 6298 Rule 5.3
 		//
@@ -1221,6 +1224,8 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			s.outstanding = 0
 			s.resendTimer.disable()
 		}
+
+
 	}
 
 	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
@@ -1230,6 +1235,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		s.resendSegment()
 	}
 
+
+
+
 	// Send more data now that some of the pending data has been ack'd, or
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
@@ -1237,6 +1245,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
 		s.sendData()
 	}
+
+
+
+
+
 }
 
 // sendSegment sends the specified segment.

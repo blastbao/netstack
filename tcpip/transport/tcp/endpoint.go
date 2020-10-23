@@ -144,7 +144,6 @@ type SACKInfo struct {
 	// NumBlocks is the number of valid SACK blocks stored in the blocks array above.
 	// NumBlocks 是指存储在上述块数组中的有效 SACK 块的数量。
 	NumBlocks int
-
 }
 
 // rcvBufAutoTuneParams are used to hold state variables to compute the auto tuned recv buffer size.
@@ -2268,9 +2267,9 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 	switch typ {
 	case stack.ControlPacketTooBig: // 包太大
 		e.sndBufMu.Lock()
-		// 递增 PacketTooBig 报文计数
+		// 增加 PacketTooBig 报文计数
 		e.packetTooBigCount++
-		// extra 是控制报文（ICMP）返回的 mtu，如果该 mtu 小于 e.sndMTU ，就更新 e.sndMTU 。
+		// extra 是控制报文（ICMP）返回的 mtu，如果该 mtu 小于当前 e.sndMTU ，就更新 e.sndMTU 。
 		if v := int(extra); v < e.sndMTU {
 			e.sndMTU = v
 		}
@@ -2280,8 +2279,6 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 	}
 }
 
-
-
 // updateSndBufferUsage is called by the protocol goroutine when room opens up in the send buffer.
 // The number of newly available bytes is v.
 //
@@ -2289,18 +2286,31 @@ func (e *endpoint) HandleControlPacket(id stack.TransportEndpointID, typ stack.C
 func (e *endpoint) updateSndBufferUsage(v int) {
 
 	e.sndBufMu.Lock()
+
+	// 如果 [发送缓冲区] 中已使用的字节数，超过了整个 [发送缓冲区] 大小的一半，则 notify 为 true 。
 	notify := e.sndBufUsed >= e.sndBufSize>>1
+
+	// 新释放 v 个字节，更新 [发送缓冲区] 中的已使用字节数。
 	e.sndBufUsed -= v
 
 	// We only notify when there is half the sndBufSize available after a full buffer event occurs.
 	// This ensures that we don't wake up writers to queue just 1-2 segments and go back to sleep.
 	//
+	// 在发生满缓冲区事件后，我们只在有超过一半的 sndBufSize 可用时进行通知。
+	// 这就确保了写入者不会在被唤醒后只能写 1、2 个 segment ，就又进入等待状态。
+
+	// 再次计算 notify 的值，两次计算的目的，是确保正是由新释放的 v 使得 [发送缓冲区] 中空闲空间占总空间的比例超过 50%，
+	// 仅此时会发送通知，否则：
+	// (1) ` notify 为 false `: 释放 v 字节之前，[发送缓冲区] 中已使用空间占总空间的比例低于 50% ，空间本来就较充足，则此时 v 个字节的释放，不会触发 notify 。
+	// (2) ` e.sndBufUsed < e.sndBufSize>>1 为 false `: 释放 v 字节之后，[发送缓冲区] 中已使用空间占总空间的比例仍超过 50% ，即释放空间后，仍旧空间不足。
 	notify = notify && e.sndBufUsed < e.sndBufSize>>1
 	e.sndBufMu.Unlock()
 
+	// ???
 	if notify {
 		e.waiterQueue.Notify(waiter.EventOut)
 	}
+
 }
 
 // readyToRead is called by the protocol goroutine when a new segment is ready to be read,
