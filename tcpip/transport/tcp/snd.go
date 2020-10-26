@@ -102,8 +102,10 @@ type sender struct {
 	// lastSendTime is the timestamp when the last packet was sent.
 	lastSendTime time.Time
 
-	// dupAckCount is the number of duplicated acks received. It is used for
-	// fast retransmit.
+	// dupAckCount is the number of duplicated acks received.
+	// It is used for fast retransmit.
+	//
+	// dupAckCount 是收到的重复的 acks 的数量。它用于快速重传。
 	dupAckCount int
 
 	// fr holds state related to fast recovery.
@@ -122,9 +124,13 @@ type sender struct {
 	// ssthresh 的初始值可以任意大(比如，一些实现中使用接收端通知窗口 rcvWnd 的d大小)，但是一旦对拥塞响应之后，其大小可能会被减小。
 	sndSsthresh int
 
-	// sndCAAckCount is the number of packets acknowledged during congestion
-	// avoidance. When enough packets have been ack'd (typically cwnd
-	// packets), the congestion window is incremented by one.
+	// sndCAAckCount is the number of packets acknowledged during congestion avoidance.
+	// When enough packets have been ack'd (typically cwnd packets),
+	// the congestion window is incremented by one.
+	//
+	// sndCAAckCount 是指在拥塞避免过程中确认的数据包数量。
+	// 当有足够多的数据包被 ack'd（通常是 cwnd 个数据包）时，拥塞窗口会增加。
+	//
 	sndCAAckCount int
 
 	// outstanding is the number of outstanding packets, that is, packets
@@ -132,7 +138,6 @@ type sender struct {
 	//
 	// outstanding 是已发送但尚未被确认的数据包。
 	outstanding int
-
 
 	//						 +-------> sndWnd <-------+
 	//						 |                        |
@@ -233,30 +238,42 @@ type rtt struct {
 	srttInited bool
 }
 
+
+
+
+
 // fastRecovery holds information related to fast recovery from a packet loss.
 // fastRecovery 保存了与数据包丢失后快速恢复相关的信息。
 //
 // +stateify savable
 type fastRecovery struct {
 
-	// active whether the endpoint is in fast recovery. The following fields
-	// are only meaningful when active is true.
+	// active whether the endpoint is in fast recovery.
+	// The following fields are only meaningful when active is true.
+	//
+	// active 表示 endpoint 是否处于快速恢复状态，以下字段只有在 active 为 true 时才有意义。
 	active bool
 
-	// first and last represent the inclusive sequence number range being
-	// recovered.
+	// first and last represent the inclusive sequence number range being recovered.
+	//
+	// first 和 last 代表正在恢复的序列号范围。
 	first seqnum.Value
 	last  seqnum.Value
 
 	// maxCwnd is the maximum value the congestion window may be inflated to
-	// due to duplicate acks. This exists to avoid attacks where the
-	// receiver intentionally sends duplicate acks to artificially inflate
-	// the sender's cwnd.
+	// due to duplicate acks. This exists to avoid attacks where the receiver
+	// intentionally sends duplicate acks to artificially inflate the sender's cwnd.
+	//
+	// maxCwnd 是由于重复的 acks 而可能导致拥塞窗口膨胀的最大值。
+	// 这个值的存在是为了避免攻击，因为接收方会故意发送重复的 ack 来人为地增加发送方的cwnd。
+	//
 	maxCwnd int
 
 	// highRxt is the highest sequence number which has been retransmitted
 	// during the current loss recovery phase.
 	// See: RFC 6675 Section 2 for details.
+	//
+	// highRxt 是当前损失恢复阶段重发的最高序列号。
 	highRxt seqnum.Value
 
 	// rescueRxt is the highest sequence number which has been
@@ -264,8 +281,13 @@ type fastRecovery struct {
 	// when there is loss at the end of the window and no new data is
 	// available for transmission.
 	// See: RFC 6675 Section 2 for details.
+	//
+	// rescueRxt 是最高序列号，当窗口结束时有丢失，没有新数据可供传输时，为了防止 ACK 时钟停滞，该序列号被优化重传。
+	//
 	rescueRxt seqnum.Value
 }
+
+
 
 func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
 
@@ -311,8 +333,11 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
 
 	// Initialize SACK Scoreboard after updating max payload size as we use
-	// the maxPayloadSize as the smss when determining if a segment is lost
-	// etc.
+	// the maxPayloadSize as the smss when determining if a segment is lost etc.
+	//
+	//
+	//
+	//
 	s.ep.scoreboard = NewSACKScoreboard(uint16(s.maxPayloadSize), iss)
 
 	return s
@@ -1044,22 +1069,50 @@ func (s *sender) sendData() {
 	}
 }
 
+// 进入快重传阶段。
+//
+//
+// 快速重传和快速恢复算法一般同时使用。
+// 快速恢复算法是认为，你还有 3 个 Duplicated Acks 说明网络也不那么糟糕，
+// 所以没有必要像 RTO 超时那么强烈，并不需要重新回到慢启动进行，这样可能降低效率。
+//
+// 启动快速恢复算法：
+//
+// 1. 设置 cwnd = ssthresh ＋ ACK 个数＊MSS（一般情况下会是 3 个 dup ACK ）
+// 2. 重传丢失的数据包（对于重传丢失的那个数据包，可以参考TCP-IP详解：SACK选项）
+// 3. 如果只收到Dup ACK，那么cwnd = cwnd + 1， 并且在允许的条件下发送一个报文段
+// 4. 如果收到新的ACK, 设置cwnd = ssthresh， 进入拥塞避免阶段
 func (s *sender) enterFastRecovery() {
+
 	s.fr.active = true
+
 	// Save state to reflect we're now in fast recovery.
 	//
 	// See : https://tools.ietf.org/html/rfc5681#section-3.2 Step 3.
 	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
+
+
+	//
 	s.sndCwnd = s.sndSsthresh + 3
+
+	//
 	s.fr.first = s.sndUna
+
+	//
 	s.fr.last = s.sndNxt - 1
+
+	//
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
+
+	//
 	if s.ep.sackPermitted {
 		s.state = SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
 		return
 	}
+
+	//
 	s.state = FastRecovery
 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
@@ -1076,51 +1129,60 @@ func (s *sender) leaveFastRecovery() {
 }
 
 func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
+
+
+
 	ack := seg.ackNumber
-	// We are in fast recovery mode. Ignore the ack if it's out of
-	// range.
+
+
+
+
+	// We are in fast recovery mode.
+	// Ignore the ack if it's out of range.
 	if !ack.InRange(s.sndUna, s.sndNxt+1) {
 		return false
 	}
 
-	// Leave fast recovery if it acknowledges all the data covered by
-	// this fast recovery session.
+	// Leave fast recovery if it acknowledges all the data covered by this fast recovery session.
 	if s.fr.last.LessThan(ack) {
 		s.leaveFastRecovery()
 		return false
 	}
 
+
 	if s.ep.sackPermitted {
-		// When SACK is enabled we let retransmission be governed by
-		// the SACK logic.
+		// When SACK is enabled we let retransmission be governed by the SACK logic.
 		return false
 	}
 
-	// Don't count this as a duplicate if it is carrying data or
-	// updating the window.
+
+	// Don't count this as a duplicate if it is carrying data or updating the window.
 	if seg.logicalLen() != 0 || s.sndWnd != seg.window {
 		return false
 	}
 
-	// Inflate the congestion window if we're getting duplicate acks
-	// for the packet we retransmitted.
+
+	// Inflate the congestion window if we're getting duplicate acks for the packet we retransmitted.
 	if ack == s.fr.first {
 		// We received a dup, inflate the congestion window by 1 packet
-		// if we're not at the max yet. Only inflate the window if
-		// regular FastRecovery is in use, RFC6675 does not require
-		// inflating cwnd on duplicate ACKs.
+		// if we're not at the max yet.
+		// Only inflate the window if regular FastRecovery is in use,
+		// RFC6675 does not require inflating cwnd on duplicate ACKs.
 		if s.sndCwnd < s.fr.maxCwnd {
 			s.sndCwnd++
 		}
 		return false
 	}
 
+
 	// A partial ack was received. Retransmit this packet and
-	// remember it so that we don't retransmit it again. We don't
-	// inflate the window because we're putting the same packet back
-	// onto the wire.
+	// remember it so that we don't retransmit it again.
+	//
+	// We don't inflate the window because we're putting the same packet back onto the wire.
 	//
 	// N.B. The retransmit timer will be reset by the caller.
+	//
+
 	s.fr.first = ack
 	s.dupAckCount = 0
 	return true
@@ -1143,16 +1205,20 @@ func (s *sender) isAssignedSequenceNumber(seg *segment) bool {
 // SetPipe() here measures number of outstanding packets rather than actual
 // outstanding bytes in the network.
 func (s *sender) SetPipe() {
+
+
 	// If SACK isn't permitted or it is permitted but recovery is not active
 	// then ignore pipe calculations.
 	if !s.ep.sackPermitted || !s.fr.active {
 		return
 	}
+
 	pipe := 0
 	smss := seqnum.Size(s.ep.scoreboard.SMSS())
 	for s1 := s.writeList.Front(); s1 != nil && s1.data.Size() != 0 && s.isAssignedSequenceNumber(s1); s1 = s1.Next() {
-		// With GSO each segment can be much larger than SMSS. So check the segment
-		// in SMSS sized ranges.
+
+		// With GSO each segment can be much larger than SMSS.
+		// So check the segment in SMSS sized ranges.
 		segEnd := s1.sequenceNumber.Add(seqnum.Size(s1.data.Size()))
 		for startSeq := s1.sequenceNumber; startSeq.LessThan(segEnd); startSeq = startSeq.Add(smss) {
 			endSeq := startSeq.Add(smss)
@@ -1160,6 +1226,7 @@ func (s *sender) SetPipe() {
 				endSeq = segEnd
 			}
 			sb := header.SACKBlock{startSeq, endSeq}
+
 			// SetPipe():
 			//
 			// After initializing pipe to zero, the following steps are
@@ -1196,10 +1263,13 @@ func (s *sender) SetPipe() {
 // related to duplicate acks and determines if a retransmit is needed according
 // to the rules in RFC 6582 (NewReno).
 func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
+
+
 	ack := seg.ackNumber
 	if s.fr.active {
 		return s.handleFastRecovery(seg)
 	}
+
 
 	// We're not in fast recovery yet. A segment is considered a duplicate
 	// only if it doesn't carry any data and doesn't update the send window,
@@ -1290,6 +1360,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// Count the duplicates and do the fast retransmit if needed.
 	// 统计重复的数据，如果需要的话进行快速重传。
 	rtx := s.checkDuplicateAck(seg)
+
 
 	// [重要]
 	// 首先要处理接收方的窗口通告，当收到报文时，一定会带有接收窗口 seg.window 和确认号 seg.ackNumber ，

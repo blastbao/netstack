@@ -1182,7 +1182,9 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 				continue
 			}
 
+			//
 			e.snd.handleRcvdSegment(s)
+
 		}
 		s.decRef()
 	}
