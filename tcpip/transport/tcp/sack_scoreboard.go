@@ -24,15 +24,20 @@ import (
 )
 
 const (
+
 	// maxSACKBlocks is the maximum number of distinct SACKBlocks the
 	// scoreboard will track. Once there are 100 distinct blocks, new
 	// insertions will fail.
 	maxSACKBlocks = 100
 
-	// defaultBtreeDegree is set to 2 as btree.New(2) results in a 2-3-4
-	// tree.
+
+	// defaultBtreeDegree is set to 2 as btree.New(2) results in a 2-3-4 tree.
 	defaultBtreeDegree = 2
 )
+
+
+
+
 
 // SACKScoreboard stores a set of disjoint SACK ranges.
 //
@@ -60,6 +65,7 @@ func NewSACKScoreboard(smss uint16, iss seqnum.Value) *SACKScoreboard {
 	}
 }
 
+
 // Reset erases all known range information from the SACK scoreboard.
 func (s *SACKScoreboard) Reset() {
 	s.ranges = btree.New(defaultBtreeDegree)
@@ -68,27 +74,34 @@ func (s *SACKScoreboard) Reset() {
 
 // Insert inserts/merges the provided SACKBlock into the scoreboard.
 func (s *SACKScoreboard) Insert(r header.SACKBlock) {
+
 	if s.ranges.Len() >= maxSACKBlocks {
 		return
 	}
+
 
 	// Check if we can merge the new range with a range before or after it.
 	var toDelete []btree.Item
 	if s.maxSACKED.LessThan(r.End - 1) {
 		s.maxSACKED = r.End - 1
 	}
+
+
 	s.ranges.AscendGreaterOrEqual(r, func(i btree.Item) bool {
+
 		if i == r {
 			return true
 		}
+
 		sacked := i.(header.SACKBlock)
-		// There is a hole between these two SACK blocks, so we can't
-		// merge anymore.
+
+
+		// There is a hole between these two SACK blocks, so we can't merge anymore.
 		if r.End.LessThan(sacked.Start) {
 			return false
 		}
-		// There is some overlap at this point, merge the blocks and
-		// delete the other one.
+
+		// There is some overlap at this point, merge the blocks and delete the other one.
 		//
 		// ----sS--------sE
 		// r.S---------------rE
@@ -99,8 +112,8 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 			toDelete = append(toDelete, i)
 			return true
 		}
-		// sacked covers a range past end of the newly inserted
-		// block.
+
+		// sacked covers a range past end of the newly inserted block.
 		r.End = sacked.End
 		toDelete = append(toDelete, i)
 		return true
@@ -129,6 +142,7 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 		toDelete = append(toDelete, i)
 		return true
 	})
+
 	for _, i := range toDelete {
 		if sb := s.ranges.Delete(i); sb != nil {
 			sb := i.(header.SACKBlock)
@@ -199,12 +213,15 @@ func (s *SACKScoreboard) Delete(seq seqnum.Value) {
 		}
 		return true
 	})
+
 	for _, sb := range toDelete {
 		s.ranges.Delete(sb)
 	}
+
 	for _, sb := range toInsert {
 		s.ranges.ReplaceOrInsert(sb)
 	}
+
 }
 
 // Copy provides a copy of the SACK scoreboard.
@@ -272,8 +289,7 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 	return isLost
 }
 
-// IsLost implements the IsLost(SeqNum) operation defined in RFC3517 section
-// 4.
+// IsLost implements the IsLost(SeqNum) operation defined in RFC3517 section 4.
 //
 // This routine returns whether the given sequence number is considered to be
 // lost. The routine returns true when either nDupAckThreshold discontiguous
@@ -294,8 +310,7 @@ func (s *SACKScoreboard) Sacked() seqnum.Size {
 	return s.sacked
 }
 
-// MaxSACKED returns the highest sequence number ever inserted in the SACK
-// scoreboard.
+// MaxSACKED returns the highest sequence number ever inserted in the SACK scoreboard.
 func (s *SACKScoreboard) MaxSACKED() seqnum.Value {
 	return s.maxSACKED
 }

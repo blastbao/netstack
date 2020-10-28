@@ -28,37 +28,58 @@ import (
 )
 
 const (
+
 	// minRTO is the minimum allowed value for the retransmit timeout.
+	//
+	// minRTO 是重传超时的最小允许值。
 	minRTO = 200 * time.Millisecond
 
 	// InitialCwnd is the initial congestion window.
-	// 初始拥塞窗口。
+	//
+	// InitialCwnd 是初始拥塞窗口。
 	InitialCwnd = 10
 
-	// nDupAckThreshold is the number of duplicate ACK's required
-	// before fast-retransmit is entered.
+	// nDupAckThreshold is the number of duplicate ACK's required before fast-retransmit is entered.
+	//
+	// nDupAckThreshold 是指进入快速重传前所需的重复 ACK 数量，默认为 3 。
 	nDupAckThreshold = 3
 )
 
+
 // ccState indicates the current congestion control state for this sender.
+//
+// 拥塞控制状态。
 type ccState int
 
 const (
+
 	// Open indicates that the sender is receiving acks in order and
 	// no loss or dupACK's etc have been detected.
+	//
+	// Open 表示发送方正在按顺序接收 ACK ，没有发现丢失或 dupACKs 等情况。
 	Open ccState = iota
+
 	// RTORecovery indicates that an RTO has occurred and the sender
 	// has entered an RTO based recovery phase.
+	//
+	// RTORecovery 表示发生了 RTO ，发送方进入了基于 RTO 的恢复阶段。
 	RTORecovery
+
 	// FastRecovery indicates that the sender has entered FastRecovery
 	// based on receiving nDupAck's. This state is entered only when
 	// SACK is not in use.
+	//
+	// FastRecovery 表示发送方在收到 nDupAck 的基础上进入FastRecovery状态。这个状态只有在SACK不使用时才会进入。
 	FastRecovery
-	// SACKRecovery indicates that the sender has entered SACK based
-	// recovery.
+
+	// SACKRecovery indicates that the sender has entered SACK based recovery.
+	//
+	// SACKRecovery 表示发送方已进入基于 SACK 的恢复。
 	SACKRecovery
-	// Disorder indicates the sender either received some SACK blocks
-	// or dupACK's.
+
+	// Disorder indicates the sender either received some SACK blocks or dupACK's.
+	//
+	// Disorder 表示发送方要么收到一些 SACK 块，要么收到 dupACK 。
 	Disorder
 )
 
@@ -245,6 +266,7 @@ type rtt struct {
 // fastRecovery holds information related to fast recovery from a packet loss.
 // fastRecovery 保存了与数据包丢失后快速恢复相关的信息。
 //
+//
 // +stateify savable
 type fastRecovery struct {
 
@@ -307,12 +329,16 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		lastSendTime:     time.Now(),
 		maxPayloadSize:   maxPayloadSize,
 		maxSentAck:       irs + 1,
+
+		// 快速恢复
 		fr: fastRecovery{
 			// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 1.
 			last:      iss,
 			highRxt:   iss,
 			rescueRxt: iss,
 		},
+
+		//
 		gso: ep.gso != nil,
 	}
 
@@ -322,8 +348,8 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 
 	s.cc = s.initCongestionControl(ep.cc)
 
-	// A negative sndWndScale means that no scaling is in use, otherwise we
-	// store the scaling value.
+	// A negative sndWndScale means that no scaling is in use, otherwise we store the scaling value.
+	// 负的 sndWndScale 表示没有使用缩放。
 	if sndWndScale > 0 {
 		s.sndWndScale = uint8(sndWndScale)
 	}
@@ -353,7 +379,7 @@ func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionCon
 	s.sndCwnd = InitialCwnd				// 初始拥塞窗口。
 	s.sndSsthresh = math.MaxInt64 		// 慢启动和拥塞避免之间的阈值。
 
-	switch congestionControlName {
+	switch congestionControlName {      // 创建拥塞控制对象，默认为 Reno 算法。
 	case ccCubic:
 		return newCubicCC(s)
 	case ccReno:
@@ -367,9 +393,18 @@ func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionCon
 // MTU. If this is in response to "packet too big" control packets (indicated
 // by the count argument), it also reduces the number of outstanding packets and
 // attempts to retransmit the first packet above the MTU size.
+//
+// MTU 最大传输单元是指一种通信协议的某一层上面所能通过的最大数据包大小（以字节为单位）。
+// MTU 最大传输单元通常与通信接口有关（网络接口卡、串口等）。
+//
+// updateMaxPayloadSize 根据给定的 MTU 更新最大有效载荷大小。
+// 如果这是为了响应 "数据包过大" 的控制数据包（由 count 参数指示），它还会减少未发送数据包的数量，
+// 并尝试重传第一个超过 MTU 大小的数据包。
+//
 func (s *sender) updateMaxPayloadSize(mtu, count int) {
-	m := mtu - header.TCPMinimumSize
 
+	// 根据 mtu 计算可用的 tcp 载荷
+	m := mtu - header.TCPMinimumSize
 	m -= s.ep.maxOptionSize()
 
 	// We don't adjust up for now.
@@ -382,10 +417,14 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		m = 1
 	}
 
+	// 如果最大有效载荷减小了，则更新
 	s.maxPayloadSize = m
+
+	//
 	if s.gso {
 		s.ep.gso.MSS = uint16(m)
 	}
+
 
 	if count == 0 {
 		// updateMaxPayloadSize is also called when the sender is created.
@@ -393,8 +432,7 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		return
 	}
 
-	// Update the scoreboard's smss to reflect the new lowered
-	// maxPayloadSize.
+	// Update the scoreboard's smss to reflect the new lowered maxPayloadSize.
 	s.ep.scoreboard.smss = uint16(m)
 
 	s.outstanding -= count
@@ -402,25 +440,27 @@ func (s *sender) updateMaxPayloadSize(mtu, count int) {
 		s.outstanding = 0
 	}
 
-	// Rewind writeNext to the first segment exceeding the MTU. Do nothing
-	// if it is already before such a packet.
+	// Rewind writeNext to the first segment exceeding the MTU.
+	// Do nothing if it is already before such a packet.
 	for seg := s.writeList.Front(); seg != nil; seg = seg.Next() {
+
+
+
 		if seg == s.writeNext {
-			// We got to writeNext before we could find a segment
-			// exceeding the MTU.
+			// We got to writeNext before we could find a segment exceeding the MTU.
 			break
 		}
 
 		if seg.data.Size() > m {
-			// We found a segment exceeding the MTU. Rewind
-			// writeNext and try to retransmit it.
+			// We found a segment exceeding the MTU.
+			// Rewind writeNext and try to retransmit it.
 			s.writeNext = seg
 			break
 		}
 	}
 
-	// Since we likely reduced the number of outstanding packets, we may be
-	// ready to send some more.
+	// Since we likely reduced the number of outstanding packets,
+	// we may be ready to send some more.
 	s.sendData()
 }
 
@@ -429,15 +469,19 @@ func (s *sender) sendAck() {
 	s.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, s.sndNxt)
 }
 
-// updateRTO updates the retransmit timeout when a new roud-trip time is
-// available. This is done in accordance with section 2 of RFC 6298.
+
+
+// updateRTO updates the retransmit timeout when a new roud-trip time is available.
+// This is done in accordance with section 2 of RFC 6298.
 func (s *sender) updateRTO(rtt time.Duration) {
 	s.rtt.Lock()
+
 	if !s.rtt.srttInited {
 		s.rtt.rttvar = rtt / 2
 		s.rtt.srtt = rtt
 		s.rtt.srttInited = true
 	} else {
+
 		diff := s.rtt.srtt - rtt
 		if diff < 0 {
 			diff = -diff
@@ -1262,14 +1306,19 @@ func (s *sender) SetPipe() {
 // checkDuplicateAck is called when an ack is received. It manages the state
 // related to duplicate acks and determines if a retransmit is needed according
 // to the rules in RFC 6582 (NewReno).
+//
+// checkDuplicateAck 在收到 ACK 时被调用。
+// 它管理与重复 ACK 相关的状态，并根据 RFC 6582（NewReno）中的规则确定是否需要重传。
+//
 func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 
 
 	ack := seg.ackNumber
+
+	// 是否处于 `快速恢复` 状态。
 	if s.fr.active {
 		return s.handleFastRecovery(seg)
 	}
-
 
 	// We're not in fast recovery yet. A segment is considered a duplicate
 	// only if it doesn't carry any data and doesn't update the send window,
@@ -1277,17 +1326,38 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 	// segment. If SACK is enabled then we have an additional check to see
 	// if the segment carries new SACK information. If it does then it is
 	// considered a duplicate ACK as per RFC6675.
+	//
+	// 现在还没有进入 `快速恢复` 阶段。
+	//
+	// 只有当一个段不携带任何数据并且不更新发送窗口时，它才会被认为是重复的，
+	// 因为如果它更新了，它就不是为了响应一个失序的段而发送的。
+	//
+	// 如果启用了 SACK ，那么我们还有一个额外的检查，看看该段是否携带了新的 SACK 信息。
+	//
+
+	// （1）sndUna 表示是下一个未确认的序列号，如果当前 ack 的 no 不等于 sndUna ，则或者是 ack 旧的包，或者是 ack 更新的包。
+	// （2）
+
+
 	if ack != s.sndUna || seg.logicalLen() != 0 || s.sndWnd != seg.window || ack == s.sndNxt {
+
+		// 是否允许选择重传
+
 		if !s.ep.sackPermitted || !seg.hasNewSACKInfo {
 			s.dupAckCount = 0
 			return false
 		}
+
 	}
 
+	// 更新收到的重复的 acks 数量
 	s.dupAckCount++
 
 	// Do not enter fast recovery until we reach nDupAckThreshold or the
 	// first unacknowledged byte is considered lost as per SACK scoreboard.
+	//
+	// 在达到 nDupAckThreshold 之前，不要进入快速恢复，否则根据 SACK 记分板，第一个未确认的字节将被视为丢失。
+	//
 	if s.dupAckCount < nDupAckThreshold || (s.ep.sackPermitted && !s.ep.scoreboard.IsLost(s.sndUna)) {
 		// RFC 6675 Step 3.
 		s.fr.highRxt = s.sndUna - 1
@@ -1296,6 +1366,9 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 		s.state = Disorder
 		return false
 	}
+
+
+
 
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 2
 	//
@@ -1307,7 +1380,7 @@ func (s *sender) checkDuplicateAck(seg *segment) (rtx bool) {
 		return false
 	}
 
-
+	// 进入快速重传。
 	s.cc.HandleNDupAcks()
 	s.enterFastRecovery()
 	s.dupAckCount = 0
@@ -1367,18 +1440,22 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 此时先更新发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
 
 	// Stash away the current window size.
-	// 设置发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
+	// 设置发送窗口 s.sndWnd 大小为 seg.window 。
 	s.sndWnd = seg.window
 
 	// Ignore ack if it doesn't acknowledge any new data.
 	// 如果它不应答任何新数据，就忽略 ACK 。
 
+
 	// 获取确认号
 	ack := seg.ackNumber
-	// 如果 ack 在最小未确认的 seq 和下一 seg 的 seq 之间
+
+	// 如果收到有效的 ack ，需要向右移动发送窗口。
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
 
+		// 收到了有效的 ack ，则重置 dupAck 计数，避免进入快速重传。
 		s.dupAckCount = 0
+
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
 		// Specifically we should only update the RTO using TSEcr if the
 		// following condition holds:
@@ -1387,31 +1464,48 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		//    averaged RTT measurement only if the segment acknowledges
 		//    some new data, i.e., only if it advances the left edge of
 		//    the send window.
+
+
+		//
 		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
 			// TSVal/Ecr values sent by Netstack are at a millisecond granularity.
 			// Netstack 发送的 TSVal/Ecr 值是以毫秒为粒度的。
 			elapsed := time.Duration(s.ep.timestamp()-seg.parsedOptions.TSEcr) * time.Millisecond
+			// 更新超时重传定时器。
 			s.updateRTO(elapsed)
 		}
 
 		// When an ack is received we must rearm the timer. RFC 6298 5.2
-		// 当收到 ACK 时，我们必须重新启动定时器。
+		// 收到 ACK 后，需要重新启动超时重传定时器(RTO)。
 		s.resendTimer.enable(s.rto)
 
 		// Remove all acknowledged data from the write list.
 		// 从写入列表 write list 中删除所有已确认的数据。
+
+		// [重要] 计算本次 acked 的字节数。
 		acked := s.sndUna.Size(ack)
+
+		// [重要] 右移发送窗口。
 		s.sndUna = ack
 
 		ackLeft := acked
 		originalOutstanding := s.outstanding
 		for ackLeft > 0 {
+
 			// We use logicalLen here because we can have FIN
 			// segments (which are always at the end of list) that
 			// have no data, but do consume a sequence number.
+
+			// 取出当前正在发送的 segment
 			seg := s.writeList.Front()
+			// 取出当前 segment 长度
 			datalen := seg.logicalLen()
 
+			// 如果当前 segment 的数据长度比本次 acked 数据大，则为部分确认，需要：
+			// 	1. 从当前 segment 的 data 中移除 acked 个字节
+			// 	2. 更新 segment 的起始序号
+			// 	3. 更新 sender 的待 ack 的数据量
+			// 然后用 break 结束 for 循环的确认过程。
 			if datalen > ackLeft {
 				prevCount := s.pCount(seg)
 				seg.data.TrimFront(int(ackLeft))
@@ -1420,9 +1514,12 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 				break
 			}
 
+			// 至此，则 seg.datalen <= ackLeft，当前 segment 被全部 ack 确认，可以移除它。
 			if s.writeNext == seg {
 				s.writeNext = seg.Next()
 			}
+
+			// 当前 segment 确认完毕，从 write list 中移除它。
 			s.writeList.Remove(seg)
 
 			// if SACK is enabled then Only reduce outstanding if
@@ -1431,7 +1528,10 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				s.outstanding -= s.pCount(seg)
 			}
+
+			// 减引用。
 			seg.decRef()
+			// 更新待 ack 数据。
 			ackLeft -= datalen
 		}
 
@@ -1482,6 +1582,9 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 
 	}
+
+
+
 
 	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
 	//

@@ -31,11 +31,6 @@ package tcp
 //
 //
 
-
-
-
-
-
 // renoState stores the variables related to TCP New Reno congestion
 // control algorithm.
 //
