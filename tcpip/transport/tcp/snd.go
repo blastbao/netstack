@@ -1225,22 +1225,25 @@ func (s *sender) leaveFastRecovery() {
 
 func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
 
-	//
 	ack := seg.ackNumber
 
-	// We are in fast recovery mode.
-	// Ignore the ack if it's out of range.
+	// We are in fast recovery mode. Ignore the ack if it's out of range.
+	//
+	// 检查 ack 序号是否位于 [sndUna, sndNxt+1) 区间。
+	// 正常状态下，如果不处于该区间，意味着收到 dup ack ；快速恢复状态下，如果不处于该区间，则直接忽略。
 	if !ack.InRange(s.sndUna, s.sndNxt+1) {
 		return false
 	}
 
 	// Leave fast recovery if it acknowledges all the data covered by this fast recovery session.
+	//
+	// 如果当前 ack 能覆盖 [..., s.fr.last)，则所有包都已 ack ，退出快速恢复阶段。
 	if s.fr.last.LessThan(ack) {
 		s.leaveFastRecovery()
 		return false
 	}
 
-
+	// 如果开启了选择重传，.....
 	if s.ep.sackPermitted {
 		// When SACK is enabled we let retransmission be governed by the SACK logic.
 		return false
