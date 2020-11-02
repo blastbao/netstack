@@ -425,6 +425,7 @@ func (h *handshake) synRcvdState(s *segment) *tcpip.Error {
 		if h.ep.sendTSOk && s.parsedOptions.TS {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
+
 		h.state = handshakeCompleted
 		return nil
 	}
@@ -576,8 +577,8 @@ func (h *handshake) execute() *tcpip.Error {
 	synOpts := header.TCPSynOptions{
 		WS:            h.rcvWndScale,		// 设置自己这一端的 wndScale
 		TS:            true, 				//
-		TSVal:         h.ep.timestamp(),
-		TSEcr:         h.ep.recentTS,
+		TSVal:         h.ep.timestamp(),    // TSval 是发送方的本地时间
+		TSEcr:         h.ep.recentTS,       //
 		SACKPermitted: bool(sackEnabled),
 		MSS:           h.ep.amss,
 	}
@@ -881,10 +882,16 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 	options := getOptions()
 	offset := 0
 
+
+
+
 	// N.B. the ordering here matches the ordering used by Linux internally
 	// and described in the raw makeOptions function. We don't include
 	// unnecessary cases here (post connection.)
+
+
 	if e.sendTSOk {
+
 		// Embed the timestamp if timestamp has been enabled.
 		//
 		// We only use the lower 32 bits of the unix time in
@@ -897,10 +904,112 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 		// timestamp clock.
 		//
 		// Ref: https://tools.ietf.org/html/rfc7323#section-5.4.
+		//
+		//
+		// timestamps 选项的含义：
+		// 	1. 发送方在发送数据时，将一个 timestamp (表示发送时间)放在包里面
+		// 	2. 接收方在收到数据包后，在对应的 ACK 包中将收到的 timestamp 返回给发送方(echo back)
+		// 	3. 发送发收到 ACK 包后，用当前时刻 now - ACK 包中的 timestamp 就能得到准确的 RTT (往返延迟)
+		//
+		// timestamps 是一个双向的选项，当一方不开启时，两方都将停用 timestamps 。
+		// 比如 client 端发送的 SYN 包中带有 timestamp 选项，但 server 端并没有开启该选项。
+		// 则回复的 SYN-ACK 将不带 timestamp 选项，同时 client 后续回复的 ACK 也不会带有 timestamp 选项。
+		// 当然，如果 client 发送的 SYN 包中就不带 timestamp ，双向都将停用 timestamp 。
+		//
+		//
+		// 具体设计:
+		// 	Kind: 8             // 标记唯一的选项类型，比如 window scale 是 3
+		// 	Length: 10 bytes    // 标记Timestamps选项的字节数
+		// 	+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+		// 	| Kind=8 | Length=10 | TS Value (TSval) | TS ECho Reply (TSecr) |
+		// 	+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+		//      1B         1B            4B                   4B
+		//
+		// 其中，TSval 是本端填写的时间戳，TSecr 是回显给对端的时间戳。
+		//
+		// 为什么需要 timestamp ?
+		//
+		// 如果没有 timestamp，RTT 的计算会怎样？
+		//   1. TCP 层在发送出一个 SKB 时，使用 skb->when 记录发送出去的时间
+		//   2. TCP 层在收到 SKB 数据包的确认时，使用 now - skb->when 来计算 RTT
+		// 但上面的机制在丢包发生时会有问题，比如:
+		//   1. TCP 层第一次发送 SKB 的时间是 send_time1 , TCP 层重传一个数据包的时间是 send_time2
+		//   2. 当 TCP 层收到 SKB 的确认包的时间是 recv_time
+		// 那么 RTT 应该是 (recv_time - send_time1) 呢，还是 (recv_time - send_time2) 呢？
+		//
+		// 以上两种方式都不可取！因为无法判断出 recv_time 对应的 ACK 是确认第一次数据包的发送还是确认重传数据包。
+		// 这样，TCP 协议栈就只能选择非重传数据包进行 RTT 采样， 但是当出现严重丢包(比如整个窗口全部丢失)时，
+		// 就完全没有数据包可以用于 RTT 采样，这样后续计算 SRTT 和 RTO 就会出现较大的偏差。
+		//
+		// timestamp 选项很好的解决了上述问题，因为 ACK 包里面带的 TSecr 值，一定是触发这个 ACK 的数据包在发送端发送的时间。
+		// 不管数据包是否重传都能准确的计算 RTT (前提是 TSecr 遵循 RTTM 中的计算原则)。
+		//
+		// 当然 timestamp 不仅解决了 RTT 计算的问题，还很好的为 PAWS 机制提供的信息依据。
+		//
+		//
+		//
+		// 开启 timestamp 会有什么负面影响?
+		//  1. 10 字节的 TCP header 开销
+		//  2. 潜在的安全问题：http://stackoverflow.com/questions/7880383/what-benefit-is-conferred-by-tcp-timestamp
+		//
+		// 什么是 RTTM ?
+		//
+		// RTTM 规定了一些使用 TSecr 计算 RTT 的原则，具体如下:
+		//
+		// a. A TSecr value received in a segment is used to update the
+		//    averaged RTT measurement only if the segment acknowledges
+		//    some new data
+		// b. The data-sender TCP must measure the effective RTT, including the additional
+		//    time due to delayed ACKs. Thus, when delayed ACKs are in use, the receiver should
+		//    reply with the TSval field from the earliest
+		// c. An ACK for an out-of-order segment should therefore contain the
+		//    timestamp from the most recent segment that advanced the window
+		// d. The timestamp from the latest segment (which filled the hole) must be echoed
+		//
+		// 什么是 PAWS ?
+		//
+		// PAWS — Protect Againest Wrapped Sequence numbers
+		// 目的是解决在高带宽下，TCP 序号可能被重复使用而带来的问题。
+		//
+		// PAWS 同样依赖于 timestamp ，并且假设在一个 TCP 流中，按序收到的所有 TCP 包的 timestamp 值都是线性递增的。
+		// 而在正常情况下，每条 TCP 流按序发送的数据包所带的 timestamp 值也确实是线性增加的。
+		// 至于为什么要强调按序，请先自行思考。
+		//
+		// 首先给出几个变量的定义，之后具体介绍 PAWS 的工作过程:
+		//
+		// Per-Connection State Variables
+		//    TS.Recent:       Latest received Timestamp
+		//    Last.ACK.sent:   Last ACK field sent
+		//
+		// Option Fields in Current Segment
+		//    SEG.TSval: TSval field from TSopt in current segment.
+		//    SEG.TSecr: TSecr field from TSopt in current segment.
+		//
+		// TS.Recent 存放着按序达到的所有 TCP 数据包的最晚的一个时间戳，
+		// 即只有在 SEG.SEQ <= Last.ACK.sent < SEG.SEG + SEG.LEN(有新的数据被按序确认了)时，才会去更新 TS.Recent 的值。
+		//
+		// 假设三个数据包的 *第一次* 发送时间分别是 A，B 和 C(A < B < C)，但 A 和 C 含有相同的序列号。
+		// 而 A 数据包由于某种原因，在阻塞在了网络中，因此发送方进行了重传，重传时间为 A2 。
+		//
+		// PAWS 要解决的主要问题就是：
+		//  当接收端在接收到 A2 后，又接着确认到了数据包 B，下一个想接收的数据是数据包 C 。
+		//  此时如果收到了数据包 A ( A 从阻塞中恢复过来了，但并未真的丢失)，
+		//  由于 A 与 C 的序列号是相同的。如果没有别的保护措施就会出现数据紊乱，没有做到可靠传输
+		//
+		// PAWS 的做法就是，如果收到的一个 TCP 数据包的 timestamp 值小于 TS.Recent ，则会丢弃该数据包。
+		// 因此数据包 A 到达接收方后，接收方的 TS.Recent 应该是数据包 B 中的 timestamp 。
+		// 而 A < B，故 A 包就会被丢弃。而真正有效的数据 C 到达接收后，由于 B < C ，因此能被正常接收
+		//
+
+
+		// 填充 2 个 NOP
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
+		// 维护一个 recentTS 在本地，任何一个数据包发出去时，都会将 e.recentTS 的值装填在 TSecr 里
 		offset += header.EncodeTSOption(e.timestamp(), uint32(e.recentTS), options[offset:])
 	}
+
+
 	if e.sackPermitted && len(sackBlocks) > 0 {
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
@@ -1196,8 +1305,12 @@ func (e *endpoint) handleSegments() *tcpip.Error {
 		e.newSegmentWaker.Assert()
 	}
 
+
 	// Send an ACK for all processed packets if needed.
-	// 如果需要，为所有处理过的数据包发送ACK。
+	//
+	// e.snd.maxSentAck 保存了最近一次发送的数据包中的 ACK 确认序号，
+	// 只要不是延迟 ACK ，e.snd.maxSentAck 的值总是和 e.rcv.rcvNxt 相等的 。
+	// 这里发现二者不等，应该是延迟 ACK 导致，这里批量 ACK 一下。
 	if e.rcv.rcvNxt != e.snd.maxSentAck {
 		e.snd.sendAck()
 	}

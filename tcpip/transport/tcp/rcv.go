@@ -535,6 +535,8 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
+	//
+	//
 	if r.ep.sendTSOk && s.parsedOptions.TS {
 		r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.maxSentAck, segSeq)
 	}

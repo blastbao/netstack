@@ -31,7 +31,7 @@ const (
 
 	// minRTO is the minimum allowed value for the retransmit timeout.
 	//
-	// minRTO 是重传超时的最小允许值。
+	// minRTO 是重传超时的最小值。
 	minRTO = 200 * time.Millisecond
 
 	// InitialCwnd is the initial congestion window.
@@ -62,7 +62,7 @@ const (
 	// RTORecovery indicates that an RTO has occurred and the sender
 	// has entered an RTO based recovery phase.
 	//
-	// RTORecovery 表示发生了 RTO ，发送方进入了基于 RTO 的恢复阶段。
+	// RTORecovery 表示发生了超时(RTO)，发送方进入了基于 RTO 的恢复阶段。
 	RTORecovery
 
 	// FastRecovery indicates that the sender has entered FastRecovery
@@ -121,6 +121,8 @@ type sender struct {
 	ep *endpoint
 
 	// lastSendTime is the timestamp when the last packet was sent.
+	//
+	// lastSendTime 是最后一个数据包发送的时间戳。
 	lastSendTime time.Time
 
 	// dupAckCount is the number of duplicated acks received.
@@ -130,6 +132,8 @@ type sender struct {
 	dupAckCount int
 
 	// fr holds state related to fast recovery.
+	//
+	// 快速恢复相关状态。
 	fr fastRecovery
 
 	// sndCwnd is the congestion window, in packets.
@@ -160,6 +164,10 @@ type sender struct {
 	// outstanding 是已发送但尚未被确认的数据包。
 	outstanding int
 
+
+
+
+
 	//						 +-------> sndWnd <-------+
 	//						 |                        |
 	//	---------------------+-------------+----------+--------------------
@@ -175,6 +183,9 @@ type sender struct {
 	// [sndNxt, sndUna + sndWnd) 	: sequence numbers allowed for new data transmission
 	// [sndUna + sndWnd, -) 		: future sequence numbers which are not yet allowed
 	//
+
+
+
 
 
 	// sndWnd is the send window size.
@@ -209,8 +220,8 @@ type sender struct {
 	// rtt.srtt, rtt.rttvar, and rto are the "smoothed round-trip time",
 	// "round-trip time variation" and "retransmit timeout", as defined in
 	// section 2 of RFC 6298.
-	rtt rtt
-	rto time.Duration
+	rtt rtt  			//
+	rto time.Duration   // resend timeout
 
 	// maxPayloadSize is the maximum size of the payload of a given segment.
 	// It is initialized on demand.
@@ -237,7 +248,9 @@ type sender struct {
 	sndWndScale uint8
 
 	// maxSentAck is the maxium acknowledgement actually sent.
-	// maxSentAck 是实际发送的最大限度的确认。
+	//
+	// maxSentAck 保存了最近一次发送的数据包中的 ACK 确认序号。
+	// 只要不是延迟 ACK ，maxSentAck 的值总是和 e.rcvNxt 相等的 。
 	maxSentAck seqnum.Value
 
 	// state is the current state of congestion control for this endpoint.
@@ -246,6 +259,7 @@ type sender struct {
 	// cc is the congestion control algorithm in use for this sender.
 	cc congestionControl
 }
+
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
 // in sender, where it is used.
@@ -258,9 +272,6 @@ type rtt struct {
 	rttvar     time.Duration
 	srttInited bool
 }
-
-
-
 
 
 // fastRecovery holds information related to fast recovery from a packet loss.
@@ -473,6 +484,8 @@ func (s *sender) sendAck() {
 
 // updateRTO updates the retransmit timeout when a new roud-trip time is available.
 // This is done in accordance with section 2 of RFC 6298.
+//
+// 根据 rtt 计算 rto ，并更新到 s.rto 上。
 func (s *sender) updateRTO(rtt time.Duration) {
 	s.rtt.Lock()
 
@@ -481,7 +494,6 @@ func (s *sender) updateRTO(rtt time.Duration) {
 		s.rtt.srtt = rtt
 		s.rtt.srttInited = true
 	} else {
-
 		diff := s.rtt.srtt - rtt
 		if diff < 0 {
 			diff = -diff
@@ -509,7 +521,6 @@ func (s *sender) updateRTO(rtt time.Duration) {
 			// https://tools.ietf.org/html/rfc6298#section-2.3.
 			const alpha = 0.125
 			const beta = 0.25
-
 			alphaPrime := alpha / expectedSamples
 			betaPrime := beta / expectedSamples
 			rttVar := (1-betaPrime)*s.rtt.rttvar.Seconds() + betaPrime*diff.Seconds()
@@ -527,15 +538,20 @@ func (s *sender) updateRTO(rtt time.Duration) {
 }
 
 // resendSegment resends the first unacknowledged segment.
+// resendSegment 重新发送第一个未确认的段。
 func (s *sender) resendSegment() {
 
 	// Don't use any segments we already sent to measure RTT as they may
 	// have been affected by packets being lost.
+	//
+	// 不要使用我们已经发送的任何段来测量 RT T，因为它们可能会受到数据包丢失的影响。
+	//
 	s.rttMeasureSeqNum = s.sndNxt
 
 	// Resend the segment.
 	if seg := s.writeList.Front(); seg != nil {
 
+		//
 		if seg.data.Size() > s.maxPayloadSize {
 			s.splitSeg(seg, s.maxPayloadSize)
 		}
@@ -559,23 +575,34 @@ func (s *sender) resendSegment() {
 // unacknowledged segments are assumed lost, and thus need to be resent.
 // Returns true if the connection is still usable, or false if the connection
 // is deemed lost.
+//
+// retransmitTimerExpired 在重传计时器过期时被调用，未被确认的段认为是丢失了，需要重新发送。
+// 如果连接仍然可用，retransmitTimerExpired 返回 true ，否则返回 false 。
+//
 func (s *sender) retransmitTimerExpired() bool {
+
 	// Check if the timer actually expired or if it's a spurious wake due
 	// to a previously orphaned runtime timer.
+	//
+	// 检查定时器是否真的过期，还是虚假唤醒。
 	if !s.resendTimer.checkExpiration() {
 		return true
 	}
 
-	s.ep.stack.Stats().TCP.Timeouts.Increment()
-	s.ep.stats.SendErrors.Timeouts.Increment()
+	s.ep.stack.Stats().TCP.Timeouts.Increment() // 超时统计
+	s.ep.stats.SendErrors.Timeouts.Increment()	// 超时统计
 
 	// Give up if we've waited more than a minute since the last resend.
+	//
+	// 如果自上次重发后，已经等待超过一分钟，就放弃吧。
 	if s.rto >= 60*time.Second {
 		return false
 	}
 
-	// Set new timeout. The timer will be restarted by the call to sendData
-	// below.
+	// Set new timeout.
+	// The timer will be restarted by the call to sendData below.
+	//
+	// 下面调用 sendData 将重新启动定时器。
 	s.rto *= 2
 
 	// See: https://tools.ietf.org/html/rfc6582#section-3.2 Step 4.
@@ -584,8 +611,13 @@ func (s *sender) retransmitTimerExpired() bool {
 	//     After a retransmit timeout, record the highest sequence number
 	//     transmitted in the variable recover, and exit the fast recovery
 	//     procedure if applicable.
+	//
+	//
+	//
 	s.fr.last = s.sndNxt - 1
 
+	// active 为 true 表示 endpoint 正处于 `快速恢复` 状态中，
+	// 但此函数被调，意味着发生超时，即在 `快速恢复` 状态中发生丢包，需要退出 `快速恢复` 状态。
 	if s.fr.active {
 		// We were attempting fast recovery but were not successful.
 		// Leave the state. We don't need to update ssthresh because it
@@ -593,8 +625,16 @@ func (s *sender) retransmitTimerExpired() bool {
 		s.leaveFastRecovery()
 	}
 
+
+	// 发生重传超时，设置状态，表示进入了基于 RTO 的恢复阶段。
 	s.state = RTORecovery
+
+	// 重传定时器超时，意味着出现丢包，调用 cc.HandleRTOExpired() 方法。
+	// 以 reno 算法为例，需要：
+	// 	(1) 减少 ssthresh 到 1/2
+	//	(2) 进入慢启动
 	s.cc.HandleRTOExpired()
+
 
 	// Mark the next segment to be sent as the first unacknowledged one and
 	// start sending again. Set the number of outstanding packets to 0 so
@@ -602,7 +642,11 @@ func (s *sender) retransmitTimerExpired() bool {
 	//
 	// We'll keep on transmitting (or retransmitting) as we get acks for
 	// the data we transmit.
+	//
+	// outstanding 是已发送但尚未被确认的数据包，这里把其置 0 ，是因为当前要重传超时的包，
+	// 意味着无需再等待这些包的 ACK ，也意味着所有已发送的包的 ACK 均已收到。
 	s.outstanding = 0
+
 
 	// Expunge all SACK information as per https://tools.ietf.org/html/rfc6675#section-5.1
 	//
@@ -619,7 +663,11 @@ func (s *sender) retransmitTimerExpired() bool {
 	// information is usable after an RTO.
 	s.ep.scoreboard.Reset()
 	s.writeNext = s.writeList.Front()
+
+
+
 	s.sendData()
+
 
 	return true
 }
@@ -1040,14 +1088,16 @@ func (s *sender) sendData() {
 	// "A TCP SHOULD set cwnd to no more than RW before beginning
 	// transmission if the TCP has not sent data in the interval exceeding
 	// the retrasmission timeout."
-
+	//
+	//
 	// TCP 拥塞控制算法的一个已知问题是，它允许在 TCP 闲置相对较长的时间后，发送出暴涨的流量。
 	// 因为，在闲置过程中，TCP 不能使用 ACK 包的时钟来评估拥链路塞情况，导致 TCP 有可能在空闲
 	// 期后向网络中发送一个 cwnd 大小的突发流量。
+	//
 	// 在闲置过程中，网络状况可能发生变化，若此时发送超大流量，可能会增加丢包情况。
-
-	// 根据 RFC 5681 第 10 页的规定，如果连接闲置了相对长的时间，再次发送时，
-	// 需要将拥塞窗口减少到 min(InitialCwnd, cwnd)，避免因为拥塞评估的不准确，造成链路丢包。
+	//
+	// 根据 RFC 5681 第 10 页的规定，如果连接闲置了相对长的时间(这里是 RTO)，再次发送时，
+	// 需要将拥塞窗口减少到 min(InitialCwnd, cwnd)，避免因为拥塞评估的不准确，造成链路因拥塞而丢包。
 	if !s.fr.active && time.Now().Sub(s.lastSendTime) > s.rto {
 		if s.sndCwnd > InitialCwnd {
 			s.sndCwnd = InitialCwnd
@@ -1064,7 +1114,7 @@ func (s *sender) sendData() {
 
 	} else {
 
-
+		//
 		for seg := s.writeNext; seg != nil && s.outstanding < s.sndCwnd; seg = seg.Next() {
 
 			//
@@ -1095,7 +1145,7 @@ func (s *sender) sendData() {
 	}
 
 
-
+	//
 	if dataSent {
 		// We sent data, so we should stop the keepalive timer to ensure
 		// that no keepalives are sent while there is pending data.
@@ -1113,6 +1163,8 @@ func (s *sender) sendData() {
 	}
 }
 
+
+
 // 进入快重传阶段。
 //
 //
@@ -1121,13 +1173,13 @@ func (s *sender) sendData() {
 // 所以没有必要像 RTO 超时那么强烈，并不需要重新回到慢启动进行，这样可能降低效率。
 //
 // 启动快速恢复算法：
-//
-// 1. 设置 cwnd = ssthresh ＋ ACK 个数＊MSS（一般情况下会是 3 个 dup ACK ）
-// 2. 重传丢失的数据包（对于重传丢失的那个数据包，可以参考TCP-IP详解：SACK选项）
-// 3. 如果只收到Dup ACK，那么cwnd = cwnd + 1， 并且在允许的条件下发送一个报文段
-// 4. 如果收到新的ACK, 设置cwnd = ssthresh， 进入拥塞避免阶段
+// 	1. 设置 cwnd = ssthresh ＋ ACK 个数＊MSS（一般情况下会是 3 个 dup ACK ）
+// 	2. 重传丢失的数据包（对于重传丢失的那个数据包，可以参考TCP-IP详解：SACK选项）
+// 	3. 如果只收到Dup ACK，那么cwnd = cwnd + 1， 并且在允许的条件下发送一个报文段
+// 	4. 如果收到新的ACK, 设置cwnd = ssthresh， 进入拥塞避免阶段
 func (s *sender) enterFastRecovery() {
 
+	// 设置 `快速恢复` 状态为 true
 	s.fr.active = true
 
 	// Save state to reflect we're now in fast recovery.
@@ -1137,26 +1189,26 @@ func (s *sender) enterFastRecovery() {
 	// the 3 duplicate ACKs and are now not in flight.
 
 
-	//
+	// 适当缩小发送拥塞窗口，用来控制发送端在收到 ACK 前能向网络传送的最大数据量的限制。
 	s.sndCwnd = s.sndSsthresh + 3
 
-	//
+	// 设置起始序号，sndUna 表示是下一个未确认的序列号
 	s.fr.first = s.sndUna
 
-	//
+	// 设置结束序号，sndNxt 表示要发送的下一个段的序列号
 	s.fr.last = s.sndNxt - 1
 
-	//
+	// 设置拥塞窗口最大值，
 	s.fr.maxCwnd = s.sndCwnd + s.outstanding
 
-	//
+	// 如果允许选择重传，则 ....
 	if s.ep.sackPermitted {
 		s.state = SACKRecovery
 		s.ep.stack.Stats().TCP.SACKRecovery.Increment()
 		return
 	}
 
-	//
+	// 设置 e 状态为 `快速恢复` 。
 	s.state = FastRecovery
 	s.ep.stack.Stats().TCP.FastRecovery.Increment()
 }
@@ -1168,18 +1220,13 @@ func (s *sender) leaveFastRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.sndCwnd = s.sndSsthresh
-
 	s.cc.PostRecovery()
 }
 
 func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
 
-
-
+	//
 	ack := seg.ackNumber
-
-
-
 
 	// We are in fast recovery mode.
 	// Ignore the ack if it's out of range.
@@ -1208,6 +1255,7 @@ func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
 
 	// Inflate the congestion window if we're getting duplicate acks for the packet we retransmitted.
 	if ack == s.fr.first {
+
 		// We received a dup, inflate the congestion window by 1 packet
 		// if we're not at the max yet.
 		// Only inflate the window if regular FastRecovery is in use,
@@ -1215,6 +1263,7 @@ func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
 		if s.sndCwnd < s.fr.maxCwnd {
 			s.sndCwnd++
 		}
+
 		return false
 	}
 
@@ -1399,7 +1448,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	}
 
 	// Update Timestamp if required. See RFC7323, section-4.3.
-	// 必要时，更新时间戳。
+	// 必要时，更新 e.recentTS 时间戳。
 	if s.ep.sendTSOk && seg.parsedOptions.TS {
 		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
 	}
@@ -1446,7 +1495,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// Ignore ack if it doesn't acknowledge any new data.
 	// 如果它不应答任何新数据，就忽略 ACK 。
 
-
 	// 获取确认号
 	ack := seg.ackNumber
 
@@ -1457,6 +1505,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		s.dupAckCount = 0
 
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
+		//
 		// Specifically we should only update the RTO using TSEcr if the
 		// following condition holds:
 		//
@@ -1466,7 +1515,7 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		//    the send window.
 
 
-		//
+		// 如果设置了
 		if s.ep.sendTSOk && seg.parsedOptions.TSEcr != 0 {
 			// TSVal/Ecr values sent by Netstack are at a millisecond granularity.
 			// Netstack 发送的 TSVal/Ecr 值是以毫秒为粒度的。
@@ -1476,11 +1525,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		}
 
 		// When an ack is received we must rearm the timer. RFC 6298 5.2
-		// 收到 ACK 后，需要重新启动超时重传定时器(RTO)。
+		// 收到有效 ACK 后，需要重置超时重传定时器(RTO)。
 		s.resendTimer.enable(s.rto)
 
 		// Remove all acknowledged data from the write list.
-		// 从写入列表 write list 中删除所有已确认的数据。
+		// 从写入列表 write list 中删除所有已 ack 的数据。
 
 		// [重要] 计算本次 acked 的字节数。
 		acked := s.sndUna.Size(ack)
@@ -1498,7 +1547,8 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 			// 取出当前正在发送的 segment
 			seg := s.writeList.Front()
-			// 取出当前 segment 长度
+
+			// 取出当前 segment 总长度
 			datalen := seg.logicalLen()
 
 			// 如果当前 segment 的数据长度比本次 acked 数据大，则为部分确认，需要：
@@ -1525,11 +1575,13 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			// if SACK is enabled then Only reduce outstanding if
 			// the segment was not previously SACKED as these have
 			// already been accounted for in SetPipe().
+			//
+			//
 			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				s.outstanding -= s.pCount(seg)
 			}
 
-			// 减引用。
+			// 减引用，以便在合适的时候彻底释放。
 			seg.decRef()
 			// 更新待 ack 数据。
 			ackLeft -= datalen
@@ -1547,12 +1599,11 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		//
-		// 如果我们不在快速恢复中，那么就根据已确认的数据包数量更新拥塞窗口。
-		//
+		// 如果当前不处于 `快速恢复` 中，就根据已确认的数据包数量更新拥塞窗口。
 		if !s.fr.active {
-			s.cc.Update(originalOutstanding - s.outstanding)
+			s.cc.Update(originalOutstanding - s.outstanding) // 根据被确认包数量更新拥塞窗口 s.sndCwnd 。
 			if s.fr.last.LessThan(s.sndUna) {
-				s.state = Open
+				s.state = Open 	// Open 表示发送方正在按顺序接收 ACK ，没有发现丢失或 dupACKs 等情况。
 			}
 		}
 
@@ -1582,7 +1633,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 
 
 	}
-
 
 
 
@@ -1659,7 +1709,6 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq
 			}
 		}
 	}
-
 
 	//
 	return s.ep.sendRaw(data, flags, seq, rcvNxt, rcvWnd)

@@ -96,7 +96,7 @@ func (r *renoState) reduceSlowStartThreshold() {
 // Update updates the congestion state based on the number of packets that were acknowledged.
 // Update implements congestionControl.Update.
 //
-// 根据被确认的数据包数量更新拥塞状态。
+// 根据被确认的数据包数量、当前 CC 阶段来更新拥塞窗口 s.sndCwnd 大小。
 //
 func (r *renoState) Update(packetsAcked int) {
 

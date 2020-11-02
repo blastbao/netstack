@@ -378,26 +378,34 @@ type endpoint struct {
 	workerCleanup bool
 
 
-
-
-
-
 	// sendTSOk is used to indicate when the TS Option has been negotiated.
 	// When sendTSOk is true every non-RST segment should carry a TS as per
 	// RFC7323#section-1.1
+	//
+	// sendTSOk 标识 TS 选项是否已开启。
+	// 当 sendTSOk 为真时，每个非 RST 段都应该按照 RFC7323#section-1.1 的规定携带 TS 选项。
 	sendTSOk bool
+
 
 	// recentTS is the timestamp that should be sent in the TSEcr field of
 	// the timestamp for future segments sent by the endpoint. This field is
 	// updated if required when a new segment is received by this endpoint.
+	//
+	//
+	//
+	//
+	//
 	recentTS uint32
+
 
 	// tsOffset is a randomized offset added to the value of the
 	// TSVal field in the timestamp option.
 	tsOffset uint32
 
+
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
+
 
 	// sackPermitted is set to true if the peer sends the TCPSACKPermitted
 	// option in the SYN/SYN-ACK.
@@ -2413,6 +2421,8 @@ func (e *endpoint) rcvWndScaleForHandshake() int {
 // updateRecentTimestamp updates the recent timestamp using the algorithm
 // described in https://tools.ietf.org/html/rfc7323#section-4.3
 func (e *endpoint) updateRecentTimestamp(tsVal uint32, maxSentAck seqnum.Value, segSeq seqnum.Value) {
+	// e.recentTS 存放着按序达到的所有 TCP 数据包的最晚的一个时间戳。
+	// 如果 s.TSval >= e.recentTS 并且 s.SEQ <= maxSentAck，那么就把 s.TSval 的值赋给 e.recentTS 。
 	if e.sendTSOk && seqnum.Value(e.recentTS).LessThan(seqnum.Value(tsVal)) && segSeq.LessThanEq(maxSentAck) {
 		e.recentTS = tsVal
 	}

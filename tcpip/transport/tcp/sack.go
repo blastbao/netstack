@@ -28,7 +28,11 @@ const (
 // If the segment happens to be an out of order delivery then the first block in the sack.blocks always
 // includes the segment identified by segStart->segEnd.
 func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value, rcvNxt seqnum.Value) {
-	newSB := header.SACKBlock{Start: segStart, End: segEnd}
+
+	newSB := header.SACKBlock{
+		Start: segStart,
+		End: segEnd,
+	}
 
 	// Ignore any invalid SACK blocks or blocks that are before rcvNxt as
 	// those bytes have already been acked.
@@ -52,8 +56,7 @@ func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value
 			continue
 		}
 		if newSB.Start.LessThanEq(end) && start.LessThanEq(newSB.End) {
-			// Merge this SACK block into newSB and discard this SACK
-			// block.
+			// Merge this SACK block into newSB and discard this SACK block.
 			if start.LessThan(newSB.Start) {
 				newSB.Start = start
 			}
@@ -66,7 +69,11 @@ func UpdateSACKBlocks(sack *SACKInfo, segStart seqnum.Value, segEnd seqnum.Value
 			n++
 		}
 	}
+
+
+	//
 	if rcvNxt.LessThan(newSB.Start) {
+
 		// If this was an out of order segment then make sure that the
 		// first SACK block is the one that includes the segment.
 		//

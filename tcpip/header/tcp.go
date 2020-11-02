@@ -97,8 +97,7 @@ type TCPFields struct {
 	UrgentPointer uint16
 }
 
-// TCPSynOptions is used to return the parsed TCP Options in a syn
-// segment.
+// TCPSynOptions is used to return the parsed TCP Options in a syn segment.
 type TCPSynOptions struct {
 
 	// MSS is the maximum segment size provided by the peer in the SYN.
@@ -383,13 +382,14 @@ func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 			i += 3
 
 		case TCPOptionTS:
+
 			if i+10 > limit || opts[i+1] != 10 {
 				return synOpts
 			}
+
 			synOpts.TSVal = binary.BigEndian.Uint32(opts[i+2:])
 			if isAck {
-				// If the segment is a SYN-ACK then store the Timestamp Echo Reply
-				// in the segment.
+				// If the segment is a SYN-ACK then store the Timestamp Echo Reply in the segment.
 				synOpts.TSEcr = binary.BigEndian.Uint32(opts[i+6:])
 			}
 			synOpts.TS = true
@@ -508,12 +508,19 @@ func EncodeWSOption(ws int, b []byte) int {
 // just returns without encoding anything. It returns the number of bytes
 // written to the provided buffer.
 func EncodeTSOption(tsVal, tsEcr uint32, b []byte) int {
+
 	if len(b) < 10 {
 		return 0
 	}
+
 	b[0], b[1] = TCPOptionTS, 10
+
+	// TSval 是发送方的本地时间，接收方在回复 ACK 包的时候，将收到的 TSval 放到 TSecr 中，并把自己的本地时间放到 TSval 中。
+	// 原发送方在收到对方回传来的 TSecr 后，把这个时间和本地时间比较，时间之差就是 RTT 。
 	binary.BigEndian.PutUint32(b[2:], tsVal)
+	//
 	binary.BigEndian.PutUint32(b[6:], tsEcr)
+
 	return int(b[1])
 }
 
@@ -560,6 +567,14 @@ func EncodeSACKBlocks(sackBlocks []SACKBlock, b []byte) int {
 }
 
 // EncodeNOP adds an explicit NOP to the option list.
+//
+// NOP 实际上是没有任何意义的字段，用于分隔 TCP Option 的不同选项，并填充使 header 为 4B 倍数。
+//
+// TCP 头部必须是 4B 的倍数，但是大多数的 TCP 选项不是 4B 的倍数。 假如出现了整个 TCP 选项部分不是 4B 的倍数，
+// 那么就需要使用 1 或多个字节无意义的 nop 来填充，使之符合TCP的头部构造的规定。例如，选项部分只有 6B ，就会用 2B 的 nop 来填充。
+//
+// NOP 也用于分隔不同的选项，例如我们的 TCP 会话中同时使用了窗口扩大选项和 SACK ，那么 TCP 头部中的 SACK 部分与
+// 窗口扩大选项间使用 NOP 分隔，明确不同的选项之间的分割点，因此在一个数据包中出现多个 NOP 是不奇怪的。
 func EncodeNOP(b []byte) int {
 	if len(b) == 0 {
 		return 0
