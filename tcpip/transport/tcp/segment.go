@@ -239,5 +239,8 @@ func (s *segment) parse() bool {
 
 // sackBlock returns a header.SACKBlock that represents this segment.
 func (s *segment) sackBlock() header.SACKBlock {
-	return header.SACKBlock{s.sequenceNumber, s.sequenceNumber.Add(s.logicalLen())}
+	return header.SACKBlock{
+		s.sequenceNumber,
+		s.sequenceNumber.Add(s.logicalLen()),
+	}
 }

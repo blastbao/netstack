@@ -1798,7 +1798,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		s.ep.updateRecentTimestamp(seg.parsedOptions.TSVal, s.maxSentAck, seg.sequenceNumber)
 	}
 
-
 	// Insert SACKBlock information into our scoreboard.
 	//
 	// 如果开启了 sack ，把当前段的 sack 信息添加到 s.ep.scoreboard 中，。
@@ -1870,7 +1869,6 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 	  如果需要进入 `快速恢复` 则需要执行 `快速重传` 来重传首个待确认的 seg 。
 	rtx := s.checkDuplicateAck(seg)
 
-
 	// [重要]
 	// 首先要处理接收方的窗口通告，当收到报文时，一定会带有接收窗口 seg.window 和确认号 seg.ackNumber ，
 	// 此时先更新发送器的发送窗口大小 s.sndWnd 为接收窗口大小 seg.window 。
@@ -1885,10 +1883,19 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 获取确认号
 	ack := seg.ackNumber
 
-	// 如果收到有效的 ack ，需要向右移动发送窗口。
+	// 如果收到有效的 ack ，需要:
+	// 	(1) 重置 dupAck 计数
+	//	(2) 根据往返耗时更新 rto
+	//  (3) 重置 RTO 定时器
+	// 	(4) 右移发送窗口 sndUna
+	//	(5) 从 writeList 中移除被 ack 的 seg (可能是部分 ack)
+	//  (6) 更新发送缓冲区大小
+	// 	(7) 清除已 ACKED 数据的 SACK 信息
+	//	(8) 更新拥塞窗口 sndCwnd 大小
+	//  (9) 如果发送窗口中的所有数据都被确认，则禁用 RTO 定时器
 	if (ack - 1).InRange(s.sndUna, s.sndNxt) {
 
-		// 收到了有效的 ack ，则重置 dupAck 计数，避免进入快速重传。
+		// 收到了有效的 ack ，则重置 dupAck 计数，避免快速重传+快速恢复。
 		s.dupAckCount = 0
 
 		// See : https://tools.ietf.org/html/rfc1323#section-3.3.
@@ -1933,10 +1940,10 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			// segments (which are always at the end of list) that
 			// have no data, but do consume a sequence number.
 
-			// 取出当前正在发送的 segment
+			// 取出首个已发送未确认的 segment
 			seg := s.writeList.Front()
 
-			// 取出当前 segment 总长度
+			// 取出该 segment 的数据长度
 			datalen := seg.logicalLen()
 
 			// 如果当前 segment 的数据长度比本次 acked 数据大，则为部分确认，需要：
@@ -1964,7 +1971,12 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			// the segment was not previously SACKED as these have
 			// already been accounted for in SetPipe().
 			//
+			// 如果当 s.ep.sackPermitted 为 false ，
+			// 或者当 s.ep.sackPermitted 为 true 且此前未对 seg 进行 sacked 的情况下，
+			// 对 outstanding 进行减少操作，因为在 SetPipe() 中已经考虑了这些问题。
 			//
+			//
+			// 这块不是很懂，因为前面 if 里面没有做类似判断，感觉这里的判断可以直接删除掉，不影响理解。
 			if !s.ep.sackPermitted || !s.ep.scoreboard.IsSACKED(seg.sackBlock()) {
 				s.outstanding -= s.pCount(seg)
 			}
@@ -1975,19 +1987,18 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			ackLeft -= datalen
 		}
 
-
 		// Update the send buffer usage and notify potential waiters.
 		// 更新发送缓冲区的使用情况，并通知潜在的等待者。
 		s.ep.updateSndBufferUsage(int(acked))
 
 		// Clear SACK information for all acked data.
-		// 清除所有 ACK 数据的 SACK 信息。
+		// 清除已 ACKED 数据的 SACK 信息。
 		s.ep.scoreboard.Delete(s.sndUna)
 
 		// If we are not in fast recovery then update the congestion
 		// window based on the number of acknowledged packets.
 		//
-		// 如果当前不处于 `快速恢复` 中，就根据已确认的数据包数量更新拥塞窗口。
+		// 如果当前不处于 `快速恢复` 中，就根据本次 ACK 确认的数据数更新拥塞窗口，否则，`快速恢复` 内部会根据 dup ack 来更新。
 		if !s.fr.active {
 			s.cc.Update(originalOutstanding - s.outstanding) // 根据被确认包数量更新拥塞窗口 s.sndCwnd 。
 			if s.fr.last.LessThan(s.sndUna) {
@@ -2007,28 +2018,24 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 			s.outstanding = 0
 		}
 
-
 		s.SetPipe()
 
 
 		// If all outstanding data was acknowledged the disable the timer. RFC 6298 Rule 5.3
 		//
-		// 如果所有未完成的数据都被确认，则禁用定时器。
+		// 如果所有数据都被确认，则禁用定时器。
 		if s.sndUna == s.sndNxt {
 			s.outstanding = 0
 			s.resendTimer.disable()
 		}
-
 	}
 
-
 	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
-	//
-	// 重传第一个未确认的 segment 。
+	// 如果需要执行快速重传，则重传首个未确认的 segment 。
+	// 这个重传逻辑放到上面 if(ack segment) 代码块的后面，是因为上面可能会释放发送缓冲和扩大拥塞窗口，避免无法发包的情况。
 	if rtx {
 		s.resendSegment()
 	}
-
 
 
 	// Send more data now that some of the pending data has been ack'd, or
@@ -2040,6 +2047,14 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 	// 或者在快速恢复过程中由于重复 ack 而导致拥塞窗口膨胀了。
 	//
 	// 如果需要的话，这也会重新启用重传定时器。
+	//
+	//
+	//
+	//
+	//
+	//
+	//
+	//
 	//
 	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
 		s.sendData()
