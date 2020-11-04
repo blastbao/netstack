@@ -40,9 +40,11 @@ const (
 
 
 // SACKScoreboard stores a set of disjoint SACK ranges.
+// SACKScoreboard 存储一组不连续的 SACK 范围。
 //
 // +stateify savable
 type SACKScoreboard struct {
+
 	// smss is defined in RFC5681 as following:
 	//
 	//    The SMSS is the size of the largest segment that the sender can
@@ -50,6 +52,13 @@ type SACKScoreboard struct {
 	//    of the network, the path MTU discovery [RFC1191, RFC4821] algorithm,
 	//    RMSS (see next item), or other factors.  The size does not include
 	//    the TCP/IP headers and options.
+	//
+	//
+	// SMSS 是指发送方可以传输的最大段的大小。
+	// 这个值可以基于网络的最大传输单位、路径 MTU 发现[RFC1191，RFC4821]算法、RMSS（见下一项）或其他因素。
+	// 该大小不包括 TCP/IP 头和选项。
+	//
+
 	smss      uint16
 	maxSACKED seqnum.Value
 	sacked    seqnum.Size
@@ -158,11 +167,13 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 
 // IsSACKED returns true if the a given range of sequence numbers denoted by r
 // are already covered by SACK information in the scoreboard.
+//
+// 如果由 r 表示的给定序列号范围已经被记分板中的 SACK 信息所覆盖，则 IsSACKED 返回 true ，此时无需重复添加 sack 块。
+//
 func (s *SACKScoreboard) IsSACKED(r header.SACKBlock) bool {
 	if s.Empty() {
 		return false
 	}
-
 	found := false
 	s.ranges.DescendLessOrEqual(r, func(i btree.Item) bool {
 		sacked := i.(header.SACKBlock)
@@ -291,13 +302,34 @@ func (s *SACKScoreboard) IsRangeLost(r header.SACKBlock) bool {
 
 // IsLost implements the IsLost(SeqNum) operation defined in RFC3517 section 4.
 //
-// This routine returns whether the given sequence number is considered to be
-// lost. The routine returns true when either nDupAckThreshold discontiguous
-// SACKed sequences have arrived above 'SeqNum' or (nDupAckThreshold * SMSS)
-// bytes with sequence numbers greater than 'SeqNum' have been SACKed.
+// This routine returns whether the given sequence number is considered to be lost.
+//
+// The routine returns true when either nDupAckThreshold discontiguous SACKed sequences have arrived above 'SeqNum'
+// or (nDupAckThreshold * SMSS) bytes with sequence numbers greater than 'SeqNum' have been SACKed.
 // Otherwise, the routine returns false.
+//
+// IsLost() 实现了 RFC3517 第 4 节中定义的 IsLost(SeqNum) 操作，它返回给定序号 seq 是否被认为是丢失的。
+//
+// 当 nDupAckThreshold 不连续时，这个例程返回 true 。
+// 当 nDupAckThreshold 不连续的 SACKed 序列到达的时间超过 'SeqNum' 或者 (nDupAckThreshold * SMSS) 序列号大于 'SeqNum' 的字节被SACKed时，
+// 该例程返回true。
+//
+// 返回真的情况：
+// (a) 当 nDupAckThreshold 个超过 SeqNum 的不连续的 SACKed 序号到达，
+// (b)
+//
+// 否则，该函数返回 false 。
+//
+// 这个函数返回是否给定的序列号已经丢失。
+//* 返回真的条件：DupThresh 个超过 SeqNum 的不连续的 SACKed 序号到达，或者超过 (DupThresh - 1) * SMSS 字节的序列号被选择性应答。
+//* 返回假的条件：其他情况。
 func (s *SACKScoreboard) IsLost(seq seqnum.Value) bool {
-	return s.IsRangeLost(header.SACKBlock{seq, seq.Add(1)})
+	return s.IsRangeLost(
+		header.SACKBlock{
+		seq,
+		seq.Add(1),
+		},
+	)
 }
 
 // Empty returns true if the SACK scoreboard has no entries, false otherwise.

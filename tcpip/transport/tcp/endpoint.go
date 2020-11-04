@@ -391,10 +391,8 @@ type endpoint struct {
 	// the timestamp for future segments sent by the endpoint. This field is
 	// updated if required when a new segment is received by this endpoint.
 	//
-	//
-	//
-	//
-	//
+	// e.recentTS 存放着按序达到的所有 TCP 数据段的最晚的一个时间戳。
+	// 如果收到段的 s.TSval >= e.recentTS 并且 s.SEQ <= maxSentAck，那么就把 s.TSval 的值赋给 e.recentTS 。
 	recentTS uint32
 
 
@@ -435,8 +433,12 @@ type endpoint struct {
 	// cork is a boolean (0 is false) and must be accessed atomically.
 	cork uint32
 
+
 	// scoreboard holds TCP SACK Scoreboard information for this endpoint.
+	//
+	// scoreboard 记录了从 SACK 选项中获知的未被确认的分组号(区间)。
 	scoreboard *SACKScoreboard
+
 
 	// The options below aren't implemented, but we remember the user
 	// settings because applications expect to be able to set/query these
@@ -2422,7 +2424,7 @@ func (e *endpoint) rcvWndScaleForHandshake() int {
 // described in https://tools.ietf.org/html/rfc7323#section-4.3
 func (e *endpoint) updateRecentTimestamp(tsVal uint32, maxSentAck seqnum.Value, segSeq seqnum.Value) {
 	// e.recentTS 存放着按序达到的所有 TCP 数据包的最晚的一个时间戳。
-	// 如果 s.TSval >= e.recentTS 并且 s.SEQ <= maxSentAck，那么就把 s.TSval 的值赋给 e.recentTS 。
+	// 如果收到段的 s.TSval >= e.recentTS 并且 s.SEQ <= maxSentAck，那么就把 s.TSval 的值赋给 e.recentTS 。
 	if e.sendTSOk && seqnum.Value(e.recentTS).LessThan(seqnum.Value(tsVal)) && segSeq.LessThanEq(maxSentAck) {
 		e.recentTS = tsVal
 	}

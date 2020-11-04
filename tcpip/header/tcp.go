@@ -132,10 +132,14 @@ type TCPSynOptions struct {
 type SACKBlock struct {
 
 	// Start indicates the lowest sequence number in the block.
+	//
+	// Start 表示 SACK 块中最低的序列号。
 	Start seqnum.Value
 
 	// End indicates the sequence number immediately following the last
 	// sequence number of this block.
+	//
+	// End 表示紧接在本块最后一个序列号之后的序列号。
 	End seqnum.Value
 }
 
