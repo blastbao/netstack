@@ -207,13 +207,17 @@ const (
 // NetworkHeaderParams are the header parameters given as input by the
 // transport endpoint to the network.
 type NetworkHeaderParams struct {
+
 	// Protocol refers to the transport protocol number.
+	// 传输层协议号。
 	Protocol tcpip.TransportProtocolNumber
 
 	// TTL refers to Time To Live field of the IP-header.
+	// 报文最大生存时间。
 	TTL uint8
 
 	// TOS refers to TypeOfService or TrafficClass field of the IP-header.
+	// 服务类型，该字段描述了 IP 包的优先级和 QoS 选项。
 	TOS uint8
 }
 
@@ -324,15 +328,19 @@ type LinkEndpointCapabilities uint
 
 // The following are the supported link endpoint capabilities.
 const (
+
 	CapabilityNone LinkEndpointCapabilities = 0
+
 	// CapabilityTXChecksumOffload indicates that the link endpoint supports
 	// checksum computation for outgoing packets and the stack can skip
 	// computing checksums when sending packets.
 	CapabilityTXChecksumOffload LinkEndpointCapabilities = 1 << iota
+
 	// CapabilityRXChecksumOffload indicates that the link endpoint supports
 	// checksum verification on received packets and that it's safe for the
 	// stack to skip checksum verification.
 	CapabilityRXChecksumOffload
+
 	CapabilityResolutionRequired
 	CapabilitySaveRestore
 	CapabilityDisconnectOk

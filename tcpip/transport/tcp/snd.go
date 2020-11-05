@@ -1319,7 +1319,6 @@ func (s *sender) enterFastRecovery() {
 	// 若收到新的有效 ack ，若 ack in [first, last] 则为部分确认，则将 first 右移相应位，
 	// 若 ack > last ，则为全部确认，直接退出快速恢复，进入拥塞避免。
 	//
-	//
 	// 设置起始序号，sndUna 表示是下一个未确认的序列号
 	s.fr.first = s.sndUna
 	// 设置结束序号，sndNxt 表示要发送的下一个段的序列号
@@ -1469,6 +1468,12 @@ func (s *sender) leaveFastRecovery() {
 //		(b) 如果后续不再发包，会导致 RTO 超时，然后进入慢启动，影响吞吐量。
 //
 //
+//
+//
+// 总结一下：
+// 最原始方法，只依靠 rto 超时重传，无法充分利用带宽。后来引入快速重传，但是它默认只重传首个被重复确认的段，
+// 如果发送窗口中有多个段丢包，需要依靠后续触发的快速重传或者 rto 超时才能完成重传，也比较低效。
+// 再后来，就进化出选择重传。
 //
 //
 func (s *sender) handleFastRecovery(seg *segment) (rtx bool) {
@@ -2030,32 +2035,34 @@ func (s *sender) handleRcvdSegment(seg *segment) {
 		}
 	}
 
+
+
 	// Now that we've popped all acknowledged data from the retransmit queue, retransmit if needed.
-	// 如果需要执行快速重传，则重传首个未确认的 segment 。
-	// 这个重传逻辑放到上面 if(ack segment) 代码块的后面，是因为上面可能会释放发送缓冲和扩大拥塞窗口，避免无法发包的情况。
+	//
+	// 注意，在 tcp 中，重传数据包不会占用发送窗口。
 	if rtx {
 		s.resendSegment()
 	}
 
+
+
+	// 注意，在 tcp 中，发送新数据的行为是由接收到 ack 来驱动的，如果不能收到有效 ack ，就不能执行数据发送。
+	// 在发送过程中，可以一次性发送满足发送窗口大小的数据，但是下一次发送，肯定要等到对端的 ack 到达后，发送窗口被扩展后，
+	// 才可以执行。
 
 	// Send more data now that some of the pending data has been ack'd, or
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
 	//
-	// 现在发送更多的数据，有些 inflight 的数据已经被 ack 了，或者窗口打开了，
-	// 或者在快速恢复过程中由于重复 ack 而导致拥塞窗口膨胀了。
+	// 现在发送更多的数据，因为有些 inflight 的数据已经被 ack 了，或者发送窗口已被打开，或者由于快速恢复期间重复确认而导致拥塞窗口膨胀。
 	//
-	// 如果需要的话，这也会重新启用重传定时器。
+	// 	if s.ep.sackPermitted == true && s.fr.active == false && s.dupAckCount != 0 && !seg.hasNewSACKInfo {
+	// 		// 满足这几个条件时，意味着当前 seg 是个无效包，既不是有效 ack 又不是 dup ack，可能是
+			// 路由器复制的包（导致其不包含新的 SACK 信息），此时发送窗口不会扩大，不应该发送新数据给对端。
+	// 	}
 	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
-	//
+	//	// 满足这几个条件，意味着当前包不是 dup ack 包；但如果启用了 SACK ，那么还要检查该段是否携带了新的 SACK 信息。
 	if !s.ep.sackPermitted || s.fr.active || s.dupAckCount == 0 || seg.hasNewSACKInfo {
 		s.sendData()
 	}
@@ -2101,6 +2108,10 @@ func (s *sender) sendSegmentFromView(data buffer.VectorisedView, flags byte, seq
 	// Every time a packet containing data is sent (including a retransmission),
 	// if SACK is enabled then use the conservative timer described in RFC6675 Section 4.0,
 	// otherwise follow the standard time described in RFC6298 Section 5.2.
+	//
+	// 每次发送包含数据的数据包时（包括重传），如果启用了 SACK ，
+	// 则使用 RFC6675 第 4.0 节中描述的保守定时器，
+	// 否则遵循 RFC6298 第 5.2 节中描述的标准时间。
 	if data.Size() != 0 {
 		if s.ep.sackPermitted {
 			s.resendTimer.enable(s.rto)

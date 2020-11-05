@@ -244,7 +244,8 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 // checkAck checks if the ACK number, if present, of a segment received during
 // a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in response.
 //
-// checkAck 检查在 TCP 三次握手过程中收到的段的 ACK 号（如果存在）是否有效。如果无效，则会发回一个 RST 段作为回应。
+// checkAck 检查在 TCP 三次握手过程中收到的段的 ACK 号（如果存在）是否有效。
+// 如果无效，则会发回一个 RST 段作为回应。
 
 func (h *handshake) checkAck(s *segment) bool {
 
@@ -457,17 +458,20 @@ func (h *handshake) processSegments() *tcpip.Error {
 
 	// 每次最多处理 maxSegmentsPerWake 默认 100 个 segment 。
 	for i := 0; i < maxSegmentsPerWake; i++ {
+
 		// 取出 segment
 		s := h.ep.segmentQueue.dequeue()
 		if s == nil {
 			return nil
 		}
+
 		// 处理 segment
 		err := h.handleSegment(s)
 		s.decRef()
 		if err != nil {
 			return err
 		}
+
 		// We stop processing packets once the handshake is completed,
 		// otherwise we may process packets meant to be processed by
 		// the main protocol goroutine.
@@ -478,11 +482,12 @@ func (h *handshake) processSegments() *tcpip.Error {
 		}
 	}
 
-	// If the queue is not empty, make sure we'll wake up in the next
-	// iteration.
+
+	// If the queue is not empty, make sure we'll wake up in the next iteration.
 	if !h.ep.segmentQueue.empty() {
 		h.ep.newSegmentWaker.Assert()
 	}
+
 
 	return nil
 }
@@ -601,10 +606,10 @@ func (h *handshake) execute() *tcpip.Error {
 	}
 
 	h.ep.sendSynTCP(
-		&h.ep.route,
-		h.ep.ID,
-		h.ep.ttl,			// ttl
-		h.ep.sendTOS,		//
+		&h.ep.route, 		// 网络层
+		h.ep.ID,			// TCP 四元组
+		h.ep.ttl,			// 最大报文生存时间
+		h.ep.sendTOS,		// 服务类型
 		h.flags,			// 标识位
 		h.iss, 				// seq 初始序号
 		h.ackNum,			// ack 序号，如果是主动发起连接，该值为 0，相反，则值为 irs + 1
@@ -700,6 +705,7 @@ func putOptions(options []byte) {
 }
 
 func makeSynOptions(opts header.TCPSynOptions) []byte {
+
 	// Emulate linux option order. This is as follows:
 	//
 	// if md5: NOP NOP MD5SIG 18 md5sig(16)
@@ -753,11 +759,17 @@ func makeSynOptions(opts header.TCPSynOptions) []byte {
 }
 
 func (e *endpoint) sendSynTCP(r *stack.Route, id stack.TransportEndpointID, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts header.TCPSynOptions) *tcpip.Error {
+
+	// 从 pool 取出一个 options 对象，并用 opts 初始化
 	options := makeSynOptions(opts)
+
 	// We ignore SYN send errors and let the callers re-attempt send.
+	// 忽略 SYN 发送错误，让调用者重新尝试发送。
 	if err := e.sendTCP(r, id, buffer.VectorisedView{}, ttl, tos, flags, seq, ack, rcvWnd, options, nil); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
+
+	// 将 options 对象归还给 pool
 	putOptions(options)
 	return nil
 }
@@ -771,32 +783,56 @@ func (e *endpoint) sendTCP(r *stack.Route, id stack.TransportEndpointID, data bu
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, d *stack.PacketDescriptor, data buffer.VectorisedView, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) {
+
+
+// 构造 TCP 头
+//
+//
+//
+//
+//
+//
+//
+func buildTCPHdr(
+	r *stack.Route,
+	id stack.TransportEndpointID,
+	d *stack.PacketDescriptor,
+	data buffer.VectorisedView,
+	flags byte,
+	seq, ack seqnum.Value,
+	rcvWnd seqnum.Size,
+	opts []byte,
+	gso *stack.GSO,
+) {
+
+	// TCP 选项字段占字节数
 	optLen := len(opts)
 	hdr := &d.Hdr
 	packetSize := d.Size
 	off := d.Off
+
 	// Initialize the header.
 	tcp := header.TCP(hdr.Prepend(header.TCPMinimumSize + optLen))
 	tcp.Encode(&header.TCPFields{
-		SrcPort:    id.LocalPort,
-		DstPort:    id.RemotePort,
-		SeqNum:     uint32(seq),
-		AckNum:     uint32(ack),
-		DataOffset: uint8(header.TCPMinimumSize + optLen),
-		Flags:      flags,
-		WindowSize: uint16(rcvWnd),
+		SrcPort:    id.LocalPort,	// 本地端口
+		DstPort:    id.RemotePort,	// 远程端口
+		SeqNum:     uint32(seq), 	// 序列号
+		AckNum:     uint32(ack),	// 应答号
+		DataOffset: uint8(header.TCPMinimumSize + optLen), // 数据偏移 = TCP 最小头 + 选项长度
+		Flags:      flags,			// TCP 标记位
+		WindowSize: uint16(rcvWnd), // 流量窗口
 	})
 	copy(tcp[header.TCPMinimumSize:], opts)
 
+	// 设置校验和
 	length := uint16(hdr.UsedLength() + packetSize)
 	xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
 	// Only calculate the checksum if offloading isn't supported.
 	if gso != nil && gso.NeedsCsum {
-		// This is called CHECKSUM_PARTIAL in the Linux kernel. We
-		// calculate a checksum of the pseudo-header and save it in the
-		// TCP header, then the kernel calculate a checksum of the
-		// header and data and get the right sum of the TCP packet.
+		// This is called CHECKSUM_PARTIAL in the Linux kernel.
+		// We calculate a checksum of the pseudo-header and save it in the TCP header,
+		// then the kernel calculate a checksum of the header and data and get the
+		// right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
 		xsum = header.ChecksumVVWithOffset(data, xsum, off, packetSize)
@@ -806,6 +842,8 @@ func buildTCPHdr(r *stack.Route, id stack.TransportEndpointID, d *stack.PacketDe
 }
 
 func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
+
+
 	optLen := len(opts)
 	if rcvWnd > 0xffff {
 		rcvWnd = 0xffff
@@ -830,10 +868,22 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 		off += packetSize
 		seq = seq.Add(seqnum.Size(packetSize))
 	}
+
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	sent, err := r.WritePackets(gso, hdrs, data, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos})
+
+	sent, err := r.WritePackets(
+		gso,
+		hdrs,
+		data,
+		stack.NetworkHeaderParams{
+			Protocol: ProtocolNumber,
+			TTL: ttl,
+			TOS: tos,
+		},
+	)
+
 	if err != nil {
 		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
 	}
@@ -844,36 +894,52 @@ func sendTCPBatch(r *stack.Route, id stack.TransportEndpointID, data buffer.Vect
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity.
 func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.VectorisedView, ttl, tos uint8, flags byte, seq, ack seqnum.Value, rcvWnd seqnum.Size, opts []byte, gso *stack.GSO) *tcpip.Error {
+
 	optLen := len(opts)
 	if rcvWnd > 0xffff {
 		rcvWnd = 0xffff
 	}
 
+	// 1. 非本地处理 && 软件 GSO && 需要分段发送
 	if r.Loop&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
 		return sendTCPBatch(r, id, data, ttl, tos, flags, seq, ack, rcvWnd, opts, gso)
 	}
 
+	//
 	d := &stack.PacketDescriptor{
 		Hdr:  buffer.NewPrependable(header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen),
 		Off:  0,
 		Size: data.Size(),
 	}
+
+	// 构造 TCP Header
 	buildTCPHdr(r, id, d, data, flags, seq, ack, rcvWnd, opts, gso)
 
 	if ttl == 0 {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, tcpip.PacketBuffer{
-		Header: d.Hdr,
-		Data:   data,
-	}); err != nil {
+
+	if err := r.WritePacket(
+		gso,							// 通用分段策略
+		stack.NetworkHeaderParams{		// 网络层 Header
+			Protocol: ProtocolNumber,	// 传输层协议号
+			TTL: ttl,					// 报文最大生存时间
+			TOS: tos,					// 服务类型
+		},
+		tcpip.PacketBuffer{				// 一个网络包的所有数据
+			Header: d.Hdr, 				// Header 保存出栈数据包的头。当一个数据包从上向下层传递时，每一层都会向 Header 添加新头部。
+			Data:   data,  				// Data 存储着网络包的有效载荷。对于入栈数据包，它还保存着报头，报头在数据包向上移动时被逐层剔除。
+		},
+	); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
+
 	r.Stats().TCP.SegmentsSent.Increment()
 	if (flags & header.TCPFlagRst) != 0 {
 		r.Stats().TCP.ResetsSent.Increment()
 	}
+
 	return nil
 }
 

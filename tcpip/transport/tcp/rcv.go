@@ -282,9 +282,13 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 	return true
 }
 
-// updateRTT updates the receiver RTT measurement based on the sequence number
-// of the received segment.
+
+
+
+
+// updateRTT updates the receiver RTT measurement based on the sequence number of the received segment.
 func (r *receiver) updateRTT() {
+
 	// From: https://public.lanl.gov/radiant/pubs/drs/sc2001-poster.pdf
 	//
 	// A system that is only transmitting acknowledgements can still
@@ -299,10 +303,12 @@ func (r *receiver) updateRTT() {
 		r.ep.rcvListMu.Unlock()
 		return
 	}
+
 	if r.rcvNxt.LessThan(r.ep.rcvAutoParams.rttMeasureSeqNumber) {
 		r.ep.rcvListMu.Unlock()
 		return
 	}
+
 	rtt := time.Since(r.ep.rcvAutoParams.rttMeasureTime)
 	// We only store the minimum observed RTT here as this is only used in
 	// absence of a SRTT available from either timestamps or a sender
@@ -496,9 +502,13 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err *tcpip.Error) {
 	return false, nil
 }
 
-// handleTimeWaitSegment handles inbound segments received when the endpoint
-// has entered the TIME_WAIT state.
+
+
+// handleTimeWaitSegment handles inbound segments received when the endpoint has entered the TIME_WAIT state.
+//
+// handleTimeWaitSegment 处理当端点进入 TIME_WAIT 状态后收到的段。
 func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn bool) {
+
 	segSeq := s.sequenceNumber
 	segLen := seqnum.Size(s.data.Size())
 
@@ -529,24 +539,31 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 		return false, true
 	}
 
+
+
+
+
 	// Drop the segment if it does not contain an ACK.
 	if !s.flagIsSet(header.TCPFlagAck) {
 		return false, false
 	}
 
+
+
+
 	// Update Timestamp if required. See RFC7323, section-4.3.
-	//
-	//
 	if r.ep.sendTSOk && s.parsedOptions.TS {
 		r.ep.updateRecentTimestamp(s.parsedOptions.TSVal, r.ep.snd.maxSentAck, segSeq)
 	}
 
 	if segSeq.Add(1) == r.rcvNxt && s.flagIsSet(header.TCPFlagFin) {
-		// If it's a FIN-ACK then resetTimeWait and send an ACK, as it
-		// indicates our final ACK could have been lost.
+		// If it's a FIN-ACK then resetTimeWait and send an ACK,
+		// as it indicates our final ACK could have been lost.
 		r.ep.snd.sendAck()
 		return true, false
 	}
+
+
 
 	// If the sequence number range is outside the acceptable range or
 	// carries data then just send an ACK. This is according to RFC 793,
@@ -556,5 +573,7 @@ func (r *receiver) handleTimeWaitSegment(s *segment) (resetTimeWait bool, newSyn
 	if segSeq != r.rcvNxt || segLen != 0 {
 		r.ep.snd.sendAck()
 	}
+
+
 	return false, false
 }

@@ -174,6 +174,7 @@ func (r *Route) IsResolutionRequired() bool {
 
 // WritePacket writes the packet through the given route.
 func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
+
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
@@ -185,8 +186,10 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 		r.ref.nic.stats.Tx.Packets.Increment()
 		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 	}
+
 	return err
 }
+
 
 // PacketDescriptor is a packet descriptor which contains a packet header and
 // offset and size of packet data in a payload view.

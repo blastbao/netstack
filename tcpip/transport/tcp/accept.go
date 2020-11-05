@@ -595,12 +595,12 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) {
 				MSS:   mssForRoute(&s.route),
 			}
 
-			//
+			// 发送 syn 报文
 			e.sendSynTCP(
-				&s.route,
-				s.id,
-				e.ttl,
-				e.sendTOS,
+				&s.route,	// 网络层
+				s.id,		// TCP 四元组 <源地址，源端口，目的地址，目的端口>
+				e.ttl, 		// 报文最大生存时间
+				e.sendTOS,	//
 				header.TCPFlagSyn|header.TCPFlagAck,
 				cookie,
 				s.sequenceNumber+1,

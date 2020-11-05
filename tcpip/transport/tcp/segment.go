@@ -80,7 +80,7 @@ type segment struct {
 	// 选项
 	options []byte
 
-	// ？
+	// 是否包含新的 sack 信息
 	hasNewSACKInfo bool
 
 	// 接收时间

@@ -344,7 +344,7 @@ type endpoint struct {
 	isRegistered      bool			// 是否已经注册到传输层
 	boundNICID        tcpip.NICID   //
 	route             stack.Route   //
-	ttl               uint8
+	ttl               uint8 		// 报文最大生存时间
 	v6only            bool
 	isConnectNotified bool
 

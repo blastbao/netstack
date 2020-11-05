@@ -23,15 +23,13 @@ import (
 
 // handleControl handles the case when an ICMP packet contains the headers of
 // the original packet that caused the ICMP one to be sent. This information is
-// used to find out which transport endpoint must be notified about the ICMP
-// packet.
+// used to find out which transport endpoint must be notified about the ICMP packet.
 func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt tcpip.PacketBuffer) {
 	h := header.IPv4(pkt.Data.First())
 
 	// We don't use IsValid() here because ICMP only requires that the IP
 	// header plus 8 bytes of the transport header be included. So it's
-	// likely that it is truncated, which would cause IsValid to return
-	// false.
+	// likely that it is truncated, which would cause IsValid to return false.
 	//
 	// Drop packet if it doesn't have the basic IPv4 header or if the
 	// original source address doesn't match the endpoint's address.
@@ -52,6 +50,7 @@ func (e *endpoint) handleControl(typ stack.ControlType, extra uint32, pkt tcpip.
 	p := h.TransportProtocol()
 	e.dispatcher.DeliverTransportControlPacket(e.id.LocalAddress, h.DestinationAddress(), ProtocolNumber, p, typ, extra, pkt)
 }
+
 
 func (e *endpoint) handleICMP(r *stack.Route, pkt tcpip.PacketBuffer) {
 	stats := r.Stats()

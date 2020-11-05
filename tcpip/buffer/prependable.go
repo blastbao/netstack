@@ -38,12 +38,18 @@ func NewPrependable(size int) Prependable {
 // prependable is used, further attempts to call Prepend will note that size >
 // p.usedIdx and return nil.
 func NewPrependableFromView(v View) Prependable {
-	return Prependable{buf: v, usedIdx: 0}
+	return Prependable{
+		buf: v,
+		usedIdx: 0,
+	}
 }
 
 // NewEmptyPrependableFromView creates a new prependable buffer from a View.
 func NewEmptyPrependableFromView(v View) Prependable {
-	return Prependable{buf: v, usedIdx: len(v)}
+	return Prependable{
+		buf: v,
+		usedIdx: len(v),
+	}
 }
 
 // View returns a View of the backing buffer that contains all prepended
