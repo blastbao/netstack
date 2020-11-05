@@ -2055,14 +2055,17 @@ func (e *endpoint) listen(backlog int) *tcpip.Error {
 	}
 
 	// Endpoint must be bound before it can transition to listen mode.
+	//
 	// Endpoint 在过渡到监听模式前必须先进行 bind。
 	if e.state != StateBound {
 		e.stats.ReadErrors.InvalidEndpointState.Increment()
 		return tcpip.ErrInvalidEndpointState
 	}
 
+
 	// Register the endpoint.
-	// 将 endpoint 注册到协议栈传输层。
+	//
+	// 将 endpoint 注册到协议栈传输层，协议号指明为 TCP ，这样后续的包会发送到本 endpoint 上来。
 	if err := e.stack.RegisterTransportEndpoint(
 		e.boundNICID,					// 网卡 ID
 		e.effectiveNetProtos,			// 实际使用的网络协议

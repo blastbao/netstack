@@ -78,14 +78,14 @@ import (
 )
 
 const (
-	// preparingG is stored in sleepers to indicate that they're preparing
-	// to sleep.
+
+	// preparingG is stored in sleepers to indicate that they're preparing to sleep.
 	preparingG = 1
 )
 
 var (
-	// assertedSleeper is a sentinel sleeper. A pointer to it is stored in
-	// wakers that are asserted.
+	// assertedSleeper is a sentinel sleeper.
+	// A pointer to it is stored in wakers that are asserted.
 	assertedSleeper Sleeper
 )
 
@@ -128,9 +128,14 @@ type Sleeper struct {
 	waitingG uintptr
 }
 
-// AddWaker associates the given waker to the sleeper. id is the value to be
-// returned when the sleeper is woken by the given waker.
+
+
+
+// AddWaker associates the given waker to the sleeper.
+// id is the value to be returned when the sleeper is woken by the given waker.
 func (s *Sleeper) AddWaker(w *Waker, id int) {
+
+
 	// Add the waker to the list of all wakers.
 	w.allWakersNext = s.allWakers
 	s.allWakers = w
