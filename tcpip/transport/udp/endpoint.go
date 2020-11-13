@@ -39,6 +39,10 @@ type EndpointState uint32
 // Endpoint states. Note that are represented in a netstack-specific manner and
 // may not be meaningful externally. Specifically, they need to be translated to
 // Linux's representation for these states if presented to userspace.
+//
+// 端点状态。
+// 请注意，这些状态是以 netstack 特有的方式来表示的，在外部可能没有意义。
+// 具体来说，如果向用户空间展示这些状态，需要翻译成 Linux 的表示方式。
 const (
 	StateInitial EndpointState = iota
 	StateBound
@@ -67,6 +71,8 @@ func (s EndpointState) String() string {
 // have concurrent goroutines make calls into the endpoint, they are properly
 // synchronized.
 //
+// endpoint 代表一个 UDP 端点。
+//
 // It implements tcpip.Endpoint.
 //
 // +stateify savable
@@ -79,8 +85,8 @@ type endpoint struct {
 	waiterQueue *waiter.Queue
 	uniqueID    uint64
 
-	// The following fields are used to manage the receive queue, and are
-	// protected by rcvMu.
+	// The following fields are used to manage the receive queue,
+	// and are protected by rcvMu.
 	rcvMu         sync.Mutex
 	rcvReady      bool
 	rcvList       udpPacketList
@@ -96,27 +102,30 @@ type endpoint struct {
 	dstPort        uint16
 	v6only         bool
 	ttl            uint8
+
 	multicastTTL   uint8
 	multicastAddr  tcpip.Address
 	multicastNICID tcpip.NICID
 	multicastLoop  bool
+
 	reusePort      bool
 	bindToDevice   tcpip.NICID
 	broadcast      bool
 
-	// sendTOS represents IPv4 TOS or IPv6 TrafficClass,
-	// applied while sending packets. Defaults to 0 as on Linux.
+
+	// sendTOS represents IPv4 TOS or IPv6 TrafficClass, applied while sending packets.
+	// Defaults to 0 as on Linux.
 	sendTOS uint8
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
 	shutdownFlags tcpip.ShutdownFlags
 
-	// multicastMemberships that need to be remvoed when the endpoint is
-	// closed. Protected by the mu mutex.
+	// multicastMemberships that need to be remvoed when the endpoint is closed.
+	// Protected by the mu mutex.
 	multicastMemberships []multicastMembership
 
-	// effectiveNetProtos contains the network protocols actually in use. In
-	// most cases it will only contain "netProto", but in cases like IPv6
+	// effectiveNetProtos contains the network protocols actually in use.
+	// In most cases it will only contain "netProto", but in cases like IPv6
 	// endpoints with v6only set to false, this could include multiple
 	// protocols (e.g., IPv6 and IPv4) or a single different protocol (e.g.,
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
@@ -127,13 +136,16 @@ type endpoint struct {
 	stats tcpip.TransportEndpointStats
 }
 
+
+
 // +stateify savable
 type multicastMembership struct {
-	nicID         tcpip.NICID
-	multicastAddr tcpip.Address
+	nicID         tcpip.NICID 		// 网卡 ID
+	multicastAddr tcpip.Address		// 多播地址
 }
 
 func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) *endpoint {
+
 	return &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
@@ -141,24 +153,23 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 			TransProto: header.UDPProtocolNumber,
 		},
 		waiterQueue: waiterQueue,
-		// RFC 1075 section 5.4 recommends a TTL of 1 for membership
-		// requests.
+
+
+		// RFC 1075 section 5.4 recommends a TTL of 1 for membership requests.
 		//
-		// RFC 5135 4.2.1 appears to assume that IGMP messages have a
-		// TTL of 1.
+		// RFC 5135 4.2.1 appears to assume that IGMP messages have a TTL of 1.
 		//
-		// RFC 5135 Appendix A defines TTL=1: A multicast source that
-		// wants its traffic to not traverse a router (e.g., leave a
-		// home network) may find it useful to send traffic with IP
-		// TTL=1.
+		// RFC 5135 Appendix A defines TTL=1: A multicast source that wants its
+		// traffic to not traverse a router (e.g., leave a home network) may find
+		// it useful to send traffic with IP TTL=1.
 		//
 		// Linux defaults to TTL=1.
-		multicastTTL:  1,
-		multicastLoop: true,
-		rcvBufSizeMax: 32 * 1024,
-		sndBufSize:    32 * 1024,
-		state:         StateInitial,
-		uniqueID:      s.UniqueID(),
+		multicastTTL:  1,				// 多播 - 报文最大生存时间
+		multicastLoop: true,			// 多播 -
+		rcvBufSizeMax: 32 * 1024,		// 32 KB
+		sndBufSize:    32 * 1024,		// 32 KB
+		state:         StateInitial,	// 初始化状态
+		uniqueID:      s.UniqueID(), 	// 唯一标识符
 	}
 }
 
@@ -212,11 +223,12 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 	return e.stack.IPTables(), nil
 }
 
-// Read reads data from the endpoint. This method does not block if
-// there is no data pending.
+// Read reads data from the endpoint.
+// This method does not block if there is no data pending.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
 	e.rcvMu.Lock()
 
+	// 接收队列为空，报错返回
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
@@ -227,16 +239,24 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
+	// 取首个未读报文
 	p := e.rcvList.Front()
+	// 从接收队列中移除
 	e.rcvList.Remove(p)
+	// 释放接收缓存
 	e.rcvBufSize -= p.data.Size()
 	e.rcvMu.Unlock()
 
+	// ???
 	if addr != nil {
 		*addr = p.senderAddress
 	}
 
-	return p.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: p.timestamp}, nil
+	// 返回该报文
+	return p.data.ToView(), tcpip.ControlMessages{
+		HasTimestamp: true,
+		Timestamp: p.timestamp,
+	}, nil
 }
 
 // prepareForWrite prepares the endpoint for sending data. In particular, it
@@ -282,7 +302,14 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // connectRoute establishes a route to the specified interface or the
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
-func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netProto tcpip.NetworkProtocolNumber) (stack.Route, tcpip.NICID, *tcpip.Error) {
+func (e *endpoint) connectRoute(
+	nicID tcpip.NICID,
+	addr tcpip.FullAddress,
+	netProto tcpip.NetworkProtocolNumber,
+) ( stack.Route, tcpip.NICID, *tcpip.Error ) {
+
+
+
 	localAddr := e.ID.LocalAddress
 	if isBroadcastOrMulticast(localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
@@ -290,19 +317,24 @@ func (e *endpoint) connectRoute(nicID tcpip.NICID, addr tcpip.FullAddress, netPr
 	}
 
 	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
+
 		if nicID == 0 {
 			nicID = e.multicastNICID
 		}
+
 		if localAddr == "" && nicID == 0 {
 			localAddr = e.multicastAddr
 		}
+
 	}
+
 
 	// Find a route to the desired destination.
 	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, err
 	}
+
 	return r, nicID, nil
 }
 
@@ -332,6 +364,8 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 }
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+
+
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -366,8 +400,8 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		dstPort = e.dstPort
 
 		if route.IsResolutionRequired() {
-			// Promote lock to exclusive if using a shared route, given that it may need to
-			// change in Route.Resolve() call below.
+			// Promote lock to exclusive if using a shared route,
+			// given that it may need to change in Route.Resolve() call below.
 			e.mu.RUnlock()
 			defer e.mu.RLock()
 
@@ -380,6 +414,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 			}
 		}
 	} else {
+
 		// Reject destination address if it goes through a different
 		// NIC than the endpoint was bound to.
 		nicID := to.NIC
@@ -410,6 +445,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		dstPort = to.Port
 	}
 
+
 	if route.IsResolutionRequired() {
 		if ch, err := route.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
@@ -419,27 +455,40 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		}
 	}
 
+
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
+
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
 		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
 	ttl := e.ttl
-	useDefaultTTL := ttl == 0
+	useDefaultTTL := ttl == 0 // 若 ttl 为 0 则需要使用默认的 ttl
 
+	// 如果是多播地址，则设置多播 ttl (默认为1)，且指明不使用默认 ttl 。
 	if header.IsV4MulticastAddress(route.RemoteAddress) || header.IsV6MulticastAddress(route.RemoteAddress) {
 		ttl = e.multicastTTL
 		// Multicast allows a 0 TTL.
 		useDefaultTTL = false
 	}
 
-	if err := sendUDP(route, buffer.View(v).ToVectorisedView(), e.ID.LocalPort, dstPort, ttl, useDefaultTTL, e.sendTOS); err != nil {
+	// 发送 UDP 报文
+	if err := sendUDP(
+		route,
+		buffer.View(v).ToVectorisedView(),
+		e.ID.LocalPort,	// 本地端口
+		dstPort,		// 目的端口
+		ttl,			// 指定报文最大生存时间
+		useDefaultTTL,	// 是否使用默认报文最大生存时间 true/false
+		e.sendTOS, 		// 服务类型
+	); err != nil {
 		return 0, nil, err
 	}
+
 	return int64(len(v)), nil, nil
 }
 
@@ -655,22 +704,26 @@ func (e *endpoint) SetSockOpt(opt interface{}) *tcpip.Error {
 // GetSockOptInt implements tcpip.Endpoint.GetSockOptInt.
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOpt) (int, *tcpip.Error) {
 	switch opt {
+
+	// 返回接收报文队列中，首个报文的数据大小
 	case tcpip.ReceiveQueueSizeOption:
 		v := 0
 		e.rcvMu.Lock()
-		if !e.rcvList.Empty() {
-			p := e.rcvList.Front()
-			v = p.data.Size()
+		if !e.rcvList.Empty() {		// 接收队列非空（有数据可读）
+			p := e.rcvList.Front()	// 接收队列首个 UDP 报文
+			v = p.data.Size() 		// 该 UDP 报文的 Data 大小
 		}
 		e.rcvMu.Unlock()
 		return v, nil
 
+	// 返回发送缓冲区的大小
 	case tcpip.SendBufferSizeOption:
 		e.mu.Lock()
 		v := e.sndBufSize
 		e.mu.Unlock()
 		return v, nil
 
+	// 返回接收缓冲区的大小
 	case tcpip.ReceiveBufferSizeOption:
 		e.rcvMu.Lock()
 		v := e.rcvBufSizeMax
@@ -789,38 +842,60 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 	}
 }
 
-// sendUDP sends a UDP segment via the provided network endpoint and under the
-// provided identity.
+
+
+// sendUDP sends a UDP segment via the provided network endpoint and under the provided identity.
 func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8) *tcpip.Error {
+
 	// Allocate a buffer for the UDP header.
+	// 先为头部准备出一个 buffer
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
 	// Initialize the header.
+	// 声明 udp 头部，其底层为刚刚创建的 hdr buffer
 	udp := header.UDP(hdr.Prepend(header.UDPMinimumSize))
 
+	// 报文长度 = 报头长度 + 数据长度
 	length := uint16(hdr.UsedLength() + data.Size())
-	udp.Encode(&header.UDPFields{
-		SrcPort: localPort,
-		DstPort: remotePort,
-		Length:  length,
+
+	// 将 udp 头部按照协议格式写入到 hdr 中
+	udp.Encode(&header.UDPFields{	// 报头
+		SrcPort: localPort,			// 源端口
+		DstPort: remotePort,		// 目的端口
+		Length:  length,			// 报文长度
 	})
 
 	// Only calculate the checksum if offloading isn't supported.
+	// 在不支持 CheckSum Offloading 的情况下才需要计算校验和，否则会交由网卡负责。
 	if r.Capabilities()&stack.CapabilityTXChecksumOffload == 0 {
+		// UDP 校验和计算的三部分：UDP 头部、UDP 数据和 UDP 伪头部。（注意：UDP校验和是可选的。）
+		// (1) 伪首部
 		xsum := r.PseudoHeaderChecksum(ProtocolNumber, length)
+		// (2) 数据
 		for _, v := range data.Views() {
 			xsum = header.Checksum(v, xsum)
 		}
+		// (3) 头部
 		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
 	if useDefaultTTL {
 		ttl = r.DefaultTTL()
 	}
-	if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: ttl, TOS: tos}, tcpip.PacketBuffer{
-		Header: hdr,
-		Data:   data,
-	}); err != nil {
+
+	// 发送网络层 IP Packet 报文
+	if err := r.WritePacket(
+		nil /* gso */,				// 通用分段策略
+		stack.NetworkHeaderParams{		// 网络层 Header
+			Protocol: ProtocolNumber,	// 传输层协议号
+			TTL: ttl,					// 报文最大生存时间
+			TOS: tos,					// 服务类型
+		},
+		tcpip.PacketBuffer{				// 包含网络包数据
+			Header: hdr,				// Header 保存出栈数据包的头。当一个数据包从上向下层传递时，每一层都会向 Header 添加新头部。
+			Data:   data,				// Data 存储着网络包的有效载荷。对于入栈数据包，它还保存着报头，报头在数据包向上移动时被逐层剔除。
+		},
+	); err != nil {
 		r.Stats().UDP.PacketSendErrors.Increment()
 		return err
 	}
@@ -830,31 +905,47 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	return nil
 }
 
+
+
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
+
+	// 获取本 endpoint 的网络层协议号
 	netProto := e.NetProto
+	// 如果待检查地址为空，则直接返回
 	if len(addr.Addr) == 0 {
 		return netProto, nil
 	}
+
+	// 检查 addr 是否是 IPv4 映射地址。（备注：IPv4 映射地址用于将 IPv4 节点表示为 IPv6 地址）
 	if header.IsV4MappedAddress(addr.Addr) {
+
 		// Fail if using a v4 mapped address on a v6only endpoint.
+		// 如果本 endpoint 只支持 IPv6 ，则无法同 IPv4 端点通信，报错。
 		if e.v6only {
 			return 0, tcpip.ErrNoRoute
 		}
 
+		// 否则：
+		// (1) 指定 IPv4 网络层协议号
 		netProto = header.IPv4ProtocolNumber
+		// (2) 从 IPv4 映射地址中取出 IPv4 地址
 		addr.Addr = addr.Addr[header.IPv6AddressSize-header.IPv4AddressSize:]
+		// (3) 如果该 IPv4 地址为 Anycast(任播) 地址，就重置它
 		if addr.Addr == header.IPv4Any {
 			addr.Addr = ""
 		}
 
 		// Fail if we are bound to an IPv6 address.
+		//
+		// 如果本 endpoint 绑定的是 IPv6 地址，则报错。(备注：UDP 情况下，allowMismatch 默认 false，则两端网络层协议必须匹配)
 		if !allowMismatch && len(e.ID.LocalAddress) == 16 {
 			return 0, tcpip.ErrNetworkUnreachable
 		}
 	}
 
-	// Fail if we're bound to an address length different from the one we're
-	// checking.
+	// Fail if we're bound to an address length different from the one we're checking.
+	//
+	// 如果本 endpoint 绑定的地址长度与我们要检查的地址长度不同，则失败。
 	if l := len(e.ID.LocalAddress); l != 0 && l != len(addr.Addr) {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
@@ -867,11 +958,17 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// 未连接，则不需断开
 	if e.state != StateConnected {
 		return nil
 	}
+
+	// id 代表传输层协议端点的标识符，<本地端口, 本地地址，远程端口，远程地址>。
 	id := stack.TransportEndpointID{}
+
 	// Exclude ephemerally bound endpoints.
+
+	// 如果指定了绑定的网卡，
 	if e.BindNICID != 0 || e.ID.LocalAddress == "" {
 		var err *tcpip.Error
 		id = stack.TransportEndpointID{
@@ -884,10 +981,12 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 		}
 		e.state = StateBound
 	} else {
+		// 释放端口
 		if e.ID.LocalPort != 0 {
 			// Release the ephemeral port.
 			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.bindToDevice)
 		}
+		// 初始状态
 		e.state = StateInitial
 	}
 
@@ -902,43 +1001,53 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
 func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+
+
+	// 根据 addr 获取网络层协议号(IPv4 or IPv6)
 	netProto, err := e.checkV4Mapped(&addr, false)
 	if err != nil {
 		return err
 	}
+
+	// 不支持 connect 到 port 为 0 的目标
 	if addr.Port == 0 {
 		// We don't support connecting to port zero.
 		return tcpip.ErrInvalidEndpointState
 	}
+
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	nicID := addr.NIC
 	var localPort uint16
+
 	switch e.state {
+	// 当前 endpoint 处于 init 状态，则可以 connect 。
 	case StateInitial:
+	// 当前 endpoint 已经 connected ，则 ... 。
 	case StateBound, StateConnected:
 		localPort = e.ID.LocalPort
 		if e.BindNICID == 0 {
 			break
 		}
-
 		if nicID != 0 && nicID != e.BindNICID {
 			return tcpip.ErrInvalidEndpointState
 		}
-
 		nicID = e.BindNICID
 	default:
 		return tcpip.ErrInvalidEndpointState
 	}
 
+	//
 	r, nicID, err := e.connectRoute(nicID, addr, netProto)
 	if err != nil {
 		return err
 	}
 	defer r.Release()
 
+
+	// 传输层端点标识符
 	id := stack.TransportEndpointID{
 		LocalAddress:  e.ID.LocalAddress,
 		LocalPort:     localPort,
@@ -953,18 +1062,25 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	// Even if we're connected, this endpoint can still be used to send
 	// packets on a different network protocol, so we register both even if
 	// v6only is set to false and this is an ipv6 endpoint.
+	//
+	// 即使已经 connected 了，这个端点仍然可以用来在不同的网络层协议上发送数据包，
+	// 所以即使 v6only 被设置为 false ，这也是一个 ipv6 端点，我们也要同时注册。
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
 	if netProto == header.IPv6ProtocolNumber && !e.v6only {
 		netProtos = []tcpip.NetworkProtocolNumber{
-			header.IPv4ProtocolNumber,
-			header.IPv6ProtocolNumber,
+			header.IPv4ProtocolNumber,	// IPv4
+			header.IPv6ProtocolNumber,	// IPv6
 		}
 	}
+
+
 
 	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
 	}
+
+
 
 	// Remove the old registration.
 	if e.ID.LocalPort != 0 {
@@ -1030,15 +1146,34 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
+
+	// 若未指定本地端口，则分配一个临时端口号，保存到 id.LocalPort 。
 	if e.ID.LocalPort == 0 {
-		port, err := e.stack.ReservePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.reusePort, e.bindToDevice)
+		port, err := e.stack.ReservePort(
+			netProtos,			// 实际使用的网络协议
+			ProtocolNumber,		// UDP 协议号
+			id.LocalAddress,	// 本地地址
+			id.LocalPort,		// 本地端口
+			e.reusePort,		// 重用端口
+			e.bindToDevice,		// 绑定网卡
+		)
 		if err != nil {
 			return id, err
 		}
 		id.LocalPort = port
 	}
 
-	err := e.stack.RegisterTransportEndpoint(nicID, netProtos, ProtocolNumber, id, e, e.reusePort, e.bindToDevice)
+	// 将 endpoint 注册到协议栈传输层，协议号指明为 UDP ，这样后续的 UDP 包会发送到本 endpoint 上来。
+	err := e.stack.RegisterTransportEndpoint(
+		nicID,				// 网卡 ID
+		netProtos,			// 实际使用的网络协议
+		ProtocolNumber, 	// UDP 协议号
+		id,					// 传输层协议端点的标识符，四元组 <本地端口, 本地地址，远程端口， 远程地址>
+		e, 					// 实现了 TransportEndpoint 接口，包括 HandlePacket(), HandleControlPacket() 等函数
+		e.reusePort,		// 是否重用端口
+		e.bindToDevice,		// 是否将套接字绑定到指定网卡，例如 eth0 等
+	)
+
 	if err != nil {
 		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.bindToDevice)
 	}
@@ -1046,12 +1181,16 @@ func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.Networ
 }
 
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
-	// Don't allow binding once endpoint is not in the initial state
-	// anymore.
+
+
+	// Don't allow binding once endpoint is not in the initial state anymore.
+	//
+	// 如果端点不处于初始状态，就不允许 Bind() 。
 	if e.state != StateInitial {
 		return tcpip.ErrInvalidEndpointState
 	}
 
+	//
 	netProto, err := e.checkV4Mapped(&addr, true)
 	if err != nil {
 		return err
@@ -1077,10 +1216,13 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		}
 	}
 
+	// id 是传输层协议端点的标识符: <本地端口, 本地地址，远程端口，远程地址>。
 	id := stack.TransportEndpointID{
-		LocalPort:    addr.Port,
-		LocalAddress: addr.Addr,
+		LocalPort:    addr.Port,	// 本地端口
+		LocalAddress: addr.Addr, 	// 本地地址
 	}
+
+	//
 	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
@@ -1112,6 +1254,8 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 	// Save the effective NICID generated by bindLocked.
+	//
+	//
 	e.BindNICID = e.RegisterNICID
 
 	return nil
@@ -1145,15 +1289,22 @@ func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
 	}, nil
 }
 
-// Readiness returns the current readiness of the endpoint. For example, if
-// waiter.EventIn is set, the endpoint is immediately readable.
+// Readiness returns the current readiness of the endpoint.
+// For example, if waiter.EventIn is set, the endpoint is immediately readable.
+//
+// Readiness 返回端点的可读状态。
+// 如果 endpoint 有数据包可读，会在 result 中设置 waiter.EventIn 标记位。
 func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
+
 	// The endpoint is always writable.
+	// 检查是否可写：endpoint 永远是可写的，如果缓存满，会默认丢弃。
 	result := waiter.EventOut & mask
 
 	// Determine if the endpoint is readable if requested.
+	// 检查是否可读：
 	if (mask & waiter.EventIn) != 0 {
 		e.rcvMu.Lock()
+		// 当前接收缓冲区非空、且 endpoint 未关闭，则有数据包可读，需要设置 waiter.EventIn 标记位。
 		if !e.rcvList.Empty() || e.rcvClosed {
 			result |= waiter.EventIn
 		}
@@ -1163,18 +1314,26 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return result
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
+// HandlePacket is called by the stack when new packets arrive to this transport endpoint.
+//
+// 当有新的数据包到达这个传输层 endpoint 时，协议栈会调用 endpoint.HandlePacket()，流程：
+// 	1. 取出 UDP PKT，解析 Header，检查 Length 是否匹配
+// 	2. 检查 endpoint 是否已关闭
+// 	3. 检查接收缓存区是否已满
+// 	4. 将格式转换为 UDP Packet 并存入接收队列中，更新接收缓冲区大小
+// 	5. 如果本次数据接收前缓冲区未空，则需通知等待者
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
+
 	// Get the header then trim it from the view.
+
+	// 从 pkt.Data 中取出 UDP Header，检查长度字段 Length 是否等于 len(pkt.Data)，若不等则直接返回
 	hdr := header.UDP(pkt.Data.First())
-	if int(hdr.Length()) > pkt.Data.Size() {
-		// Malformed packet.
+	if int(hdr.Length()) > pkt.Data.Size() { 	// Malformed packet.
 		e.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		e.stats.ReceiveErrors.MalformedPacketsReceived.Increment()
 		return
 	}
-
+	// 从 pkt.Data 中移除 UDP Header，剩下 UDP Payload
 	pkt.Data.TrimFront(header.UDPMinimumSize)
 
 	e.rcvMu.Lock()
@@ -1182,13 +1341,15 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 	e.stats.PacketsReceived.Increment()
 
 	// Drop the packet if our buffer is currently full.
+
+	// 如果当前 endpoint 未准备好接收数据或已关闭，则直接返回。
 	if !e.rcvReady || e.rcvClosed {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
 		e.stats.ReceiveErrors.ClosedReceiver.Increment()
 		return
 	}
-
+	// 如果当前接收缓冲区大小超过阈值，则直接返回。
 	if e.rcvBufSize >= e.rcvBufSizeMax {
 		e.rcvMu.Unlock()
 		e.stack.Stats().UDP.ReceiveBufferErrors.Increment()
@@ -1196,25 +1357,32 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 		return
 	}
 
+	// 检查当前缓冲区是否未空，若为空，则本次新到达数据需要触发 notify 通知等待者。
 	wasEmpty := e.rcvBufSize == 0
 
 	// Push new packet into receive list and increment the buffer size.
+
+	// 构造 UDP 包
 	packet := &udpPacket{
 		senderAddress: tcpip.FullAddress{
-			NIC:  r.NICID(),
-			Addr: id.RemoteAddress,
-			Port: hdr.SourcePort(),
+			NIC:  r.NICID(),		// 网卡 ID
+			Addr: id.RemoteAddress,	// 目标地址
+			Port: hdr.SourcePort(), // 目标端口
 		},
 	}
+	// 设置 Data
 	packet.data = pkt.Data
+	// 推入接收包队列
 	e.rcvList.PushBack(packet)
+	// 增加接收数据计数
 	e.rcvBufSize += pkt.Data.Size()
-
+	// 设置时间戳 timestamp
 	packet.timestamp = e.stack.NowNanoseconds()
 
 	e.rcvMu.Unlock()
 
 	// Notify any waiters that there's data to be read now.
+	// 如果本次数据接收前缓冲区未空，则需通知等待者，有数据可读。
 	if wasEmpty {
 		e.waiterQueue.Notify(waiter.EventIn)
 	}

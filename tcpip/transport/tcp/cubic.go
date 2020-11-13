@@ -120,8 +120,8 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 	return packetsAcked
 }
 
-// Update updates cubic's internal state variables. It must be called on every
-// ACK received.
+// Update updates cubic's internal state variables.
+// It must be called on every ACK received.
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
 func (c *cubicState) Update(packetsAcked int) {
 	if c.s.sndCwnd < c.s.sndSsthresh {

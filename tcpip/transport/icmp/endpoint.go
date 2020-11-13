@@ -727,9 +727,9 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return result
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
+// HandlePacket is called by the stack when new packets arrive to this transport endpoint.
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
+
 	// Only accept echo replies.
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:

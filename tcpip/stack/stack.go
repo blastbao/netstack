@@ -494,10 +494,14 @@ type TransportEndpointInfo struct {
 
 	ID TransportEndpointID
 
-	// BindNICID and bindAddr are set via calls to Bind(). They are used to
-	// reject attempts to send data or connect via a different NIC or address
+	// BindNICID and bindAddr are set via calls to Bind().
+	// They are used to reject attempts to send data or connect via a different NIC or address
+	//
+	// BindNICID 和 BindAddr 是通过调用 Bind() 来设置的。
+	// 用于绑定连接、发送所使用的 NIC 和地址。
 	BindNICID tcpip.NICID
 	BindAddr  tcpip.Address
+
 	// RegisterNICID is the default NICID registered as a side-effect of
 	// connect or datagram write.
 	RegisterNICID tcpip.NICID

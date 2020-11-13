@@ -223,11 +223,19 @@ func (b IPv6) IsValid(pktSize int) bool {
 
 // IsV4MappedAddress determines if the provided address is an IPv4 mapped
 // address by checking if its prefix is 0:0:0:0:0:ffff::/96.
+//
+// IsV4MappedAddress() 检查 addr 是否是 IPv4 映射地址。
+//
+// IPv4 映射地址用于将 IPv4 节点表示为 IPv6 地址。
+// 它允许 IPv6 应用程序直接与 IPv4 应用程序通信。
+// 例如，0:0:0:0:0:ffff:192.1.56.10 和 ::ffff:192.1.56.10/96（短格式）。
+//
 func IsV4MappedAddress(addr tcpip.Address) bool {
+	// 检查地址长度是否为合法 IPv6 地址。
 	if len(addr) != IPv6AddressSize {
 		return false
 	}
-
+	// 检查前缀是否为 0:0:0:0:0:fff::/96 来确定所提供的地址是否为 IPv4 映射地址。
 	return strings.HasPrefix(string(addr), "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff")
 }
 

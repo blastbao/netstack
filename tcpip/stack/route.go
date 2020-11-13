@@ -105,8 +105,7 @@ func (r *Route) Stats() tcpip.Stats {
 	return r.ref.nic.stack.Stats()
 }
 
-// PseudoHeaderChecksum forwards the call to the network endpoint's
-// implementation.
+// PseudoHeaderChecksum forwards the call to the network endpoint's implementation.
 func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, totalLen uint16) uint16 {
 	return header.PseudoHeaderChecksum(protocol, r.LocalAddress, r.RemoteAddress, totalLen)
 }
@@ -132,6 +131,7 @@ func (r *Route) GSOMaxSize() uint32 {
 // returned for the top level caller to block. Channel is closed once address resolution
 // is complete (success or not).
 func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
+
 	if !r.IsResolutionRequired() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
 		// link address is already known.
@@ -147,10 +147,12 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		}
 		nextAddr = r.RemoteAddress
 	}
+
 	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
 		return ch, err
 	}
+
 	r.RemoteLinkAddress = linkAddr
 	return nil, nil
 }

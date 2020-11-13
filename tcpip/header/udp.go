@@ -32,8 +32,8 @@ const (
 	UDPMaximumPacketSize = 0xffff
 )
 
-// UDPFields contains the fields of a UDP packet. It is used to describe the
-// fields of a packet that needs to be encoded.
+// UDPFields contains the fields of a UDP packet.
+// It is used to describe the fields of a packet that needs to be encoded.
 type UDPFields struct {
 	// SrcPort is the "source port" field of a UDP packet.
 	SrcPort uint16
@@ -49,13 +49,16 @@ type UDPFields struct {
 }
 
 // UDP represents a UDP header stored in a byte array.
+// UDP 表示存储在字节数组中的 UDP 头部。
 type UDP []byte
 
 const (
 	// UDPMinimumSize is the minimum size of a valid UDP packet.
+	// UDPMinimumSize 是一个有效的 UDP 数据包的最小大小。
 	UDPMinimumSize = 8
 
 	// UDPProtocolNumber is UDP's transport protocol number.
+	// UDPProtocolNumber 是 UDP 的传输层协议号。
 	UDPProtocolNumber tcpip.TransportProtocolNumber = 17
 )
 

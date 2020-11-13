@@ -30,7 +30,7 @@ type NetworkEndpointID struct {
 
 // TransportEndpointID is the identifier of a transport layer protocol endpoint.
 //
-// TransportEndpointID 是传输层协议端点的标识符，<本地端口, 本地地址，远程端口， 远程地址>。
+// TransportEndpointID 是传输层协议端点的标识符，<本地端口, 本地地址，远程端口，远程地址>。
 //
 // +stateify savable
 type TransportEndpointID struct {
@@ -334,7 +334,16 @@ const (
 	// CapabilityTXChecksumOffload indicates that the link endpoint supports
 	// checksum computation for outgoing packets and the stack can skip
 	// computing checksums when sending packets.
+	//
+	// CapabilityTXChecksumOffload 表示链路层端点支持对出栈数据包进行校验和计算，
+	// 此时，网络层在发送数据包时可以跳过计算校验和。
+	//
+	//
+	// CheckSum Offload 实际上就是是将 TCP/UDP/IP 校验和工作交给了网卡硬件完成，以节约系统的 CPU 资源。
+	// 譬如：以太网发送网卡计算以太网 CRC32 校验和，接收网卡验证这个校验和。
+	// 如果接收到的校验和错误，网卡会在内部丢弃数据包。
 	CapabilityTXChecksumOffload LinkEndpointCapabilities = 1 << iota
+
 
 	// CapabilityRXChecksumOffload indicates that the link endpoint supports
 	// checksum verification on received packets and that it's safe for the

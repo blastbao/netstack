@@ -99,12 +99,24 @@ const (
 	IPv4ProtocolNumber tcpip.NetworkProtocolNumber = 0x0800
 
 	// IPv4Version is the version of the ipv4 protocol.
+	// IPv4 版本号
 	IPv4Version = 4
 
 	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
+	//
+	//
 	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.
+	//
+	// Anycast 最初是在 RFC1546 中提出并定义的，
+	// 根据 RFC1546 的说明 IPv4 的任播地址不同于 IPv4 的单播地址，
+	// 它建议从 IPv4 的地址空间分配出一块独立的地址空间作为任播地址空间。
+	//
+	// 例如：在 IP 网络上通过一个 Anycast 地址标识一组提供特定服务的主机，
+	// 同时服务访问方并不关心提供服务的具体是哪一台主机（比如：DNS 或者镜像服务），
+	// 访问该地址的报文可以被 IP 网络路由到这一组目标中的任何一台主机上。
+	//
 	IPv4Any tcpip.Address = "\x00\x00\x00\x00"
 
 	// IPv4MinimumProcessableDatagramSize is the minimum size of an IP

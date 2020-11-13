@@ -919,6 +919,7 @@ func sendTCP(r *stack.Route, id stack.TransportEndpointID, data buffer.Vectorise
 		ttl = r.DefaultTTL()
 	}
 
+	// 发送网络层 IP Packet 报文
 	if err := r.WritePacket(
 		gso,							// 通用分段策略
 		stack.NetworkHeaderParams{		// 网络层 Header
