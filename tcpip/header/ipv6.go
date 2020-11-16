@@ -241,10 +241,14 @@ func IsV4MappedAddress(addr tcpip.Address) bool {
 
 // IsV6MulticastAddress determines if the provided address is an IPv6
 // multicast address (anything starting with FF).
+//
+// 判断是否为 IPv6 多播地址。
 func IsV6MulticastAddress(addr tcpip.Address) bool {
+	// 检查地址长度是否为合法 IPv6 地址。
 	if len(addr) != IPv6AddressSize {
 		return false
 	}
+	// 检查标记位。
 	return addr[0] == 0xff
 }
 

@@ -491,7 +491,6 @@ type TransportEndpointInfo struct {
 	TransProto tcpip.TransportProtocolNumber
 
 	// The following fields are protected by endpoint mu.
-
 	ID TransportEndpointID
 
 	// BindNICID and bindAddr are set via calls to Bind().
@@ -504,6 +503,8 @@ type TransportEndpointInfo struct {
 
 	// RegisterNICID is the default NICID registered as a side-effect of
 	// connect or datagram write.
+	//
+
 	RegisterNICID tcpip.NICID
 }
 
@@ -522,11 +523,14 @@ func (*TransportEndpointInfo) IsEndpointInfo() {}
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
 func New(opts Options) *Stack {
+
+	// 定时器
 	clock := opts.Clock
 	if clock == nil {
 		clock = &tcpip.StdClock{}
 	}
 
+	// 唯一 ID 生成器
 	if opts.UniqueID == nil {
 		opts.UniqueID = new(uniqueIDGenerator)
 	}
@@ -534,6 +538,7 @@ func New(opts Options) *Stack {
 	// Make sure opts.NDPConfigs contains valid values only.
 	opts.NDPConfigs.validate()
 
+	// 初始化构造 stack
 	s := &Stack{
 		transportProtocols:   make(map[tcpip.TransportProtocolNumber]*transportProtocolState),
 		networkProtocols:     make(map[tcpip.NetworkProtocolNumber]NetworkProtocol),
@@ -554,6 +559,7 @@ func New(opts Options) *Stack {
 	}
 
 	// Add specified network protocols.
+	// 初始化网络层协议
 	for _, netProto := range opts.NetworkProtocols {
 		s.networkProtocols[netProto.Number()] = netProto
 		if r, ok := netProto.(LinkAddressResolver); ok {
@@ -562,6 +568,7 @@ func New(opts Options) *Stack {
 	}
 
 	// Add specified transport protocols.
+	// 初始化传输层协议
 	for _, transProto := range opts.TransportProtocols {
 		s.transportProtocols[transProto.Number()] = &transportProtocolState{
 			proto: transProto,
@@ -1092,34 +1099,48 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 // CheckLocalAddress determines if the given local address exists, and if it
 // does, returns the id of the NIC it's bound to. Returns 0 if the address
 // does not exist.
+//
+//
+// CheckLocalAddress 确定给定的本地地址是否存在，如果存在，则返回它所绑定的 NIC 的 id 。如果地址不存在，则返回 0 。
 func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	// If a NIC is specified, we try to find the address there only.
+	// 如果指定了网卡，则只在该网卡上查找地址。
 	if nicID != 0 {
+
+		// 取出网卡信息
 		nic := s.nics[nicID]
 		if nic == nil {
 			return 0
 		}
 
+		//
 		ref := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
 		if ref == nil {
 			return 0
 		}
 
+		//
 		ref.decRef()
 
 		return nic.id
 	}
 
 	// Go through all the NICs.
+	//
+	// 如果未指定网卡，则遍历所有网卡来查找地址。
 	for _, nic := range s.nics {
+
+
 		ref := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
 		if ref != nil {
 			ref.decRef()
 			return nic.id
 		}
+
 	}
 
 	return 0
@@ -1166,6 +1187,8 @@ func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr t
 
 // GetLinkAddress implements LinkAddressCache.GetLinkAddress.
 func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, waker *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error) {
+
+	// 根据 nicID 取出网卡信息
 	s.mu.RLock()
 	nic := s.nics[nicID]
 	if nic == nil {
@@ -1174,8 +1197,13 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 	}
 	s.mu.RUnlock()
 
+	// 构造 addr 地址
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
+
+	// 根据网络层协议号取出对应的地址解析器
 	linkRes := s.linkAddrResolvers[protocol]
+
+	//
 	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
 }
 

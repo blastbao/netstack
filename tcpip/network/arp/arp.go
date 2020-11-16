@@ -155,6 +155,7 @@ func (*protocol) LinkAddressProtocol() tcpip.NetworkProtocolNumber {
 
 // LinkAddressRequest implements stack.LinkAddressResolver.
 func (*protocol) LinkAddressRequest(addr, localAddr tcpip.Address, linkEP stack.LinkEndpoint) *tcpip.Error {
+
 	r := &stack.Route{
 		RemoteLinkAddress: broadcastMAC,
 	}

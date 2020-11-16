@@ -57,8 +57,7 @@ func (*protocol) MinimumPacketSize() int {
 	return header.UDPMinimumSize
 }
 
-// ParsePorts returns the source and destination ports stored in the given udp
-// packet.
+// ParsePorts returns the source and destination ports stored in the given udp packet.
 func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 	h := header.UDP(v)
 	return h.SourcePort(), h.DestinationPort(), nil
@@ -67,6 +66,7 @@ func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err *tcpip.Error) {
 // HandleUnknownDestinationPacket handles packets targeted at this protocol but
 // that don't match any existing endpoint.
 func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) bool {
+
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.Data.First())
 	if int(hdr.Length()) > pkt.Data.Size() {
@@ -74,13 +74,19 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		r.Stack().Stats().UDP.MalformedPacketsReceived.Increment()
 		return true
 	}
+
 	// TODO(b/129426613): only send an ICMP message if UDP checksum is valid.
 
 	// Only send ICMP error if the address is not a multicast/broadcast
 	// v4/v6 address or the source is not the unspecified address.
 	//
 	// See: point e) in https://tools.ietf.org/html/rfc4443#section-2.4
-	if id.LocalAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(id.LocalAddress) || header.IsV6MulticastAddress(id.LocalAddress) || id.RemoteAddress == header.IPv6Any || id.RemoteAddress == header.IPv4Any {
+	//
+	if id.LocalAddress == header.IPv4Broadcast ||
+		header.IsV4MulticastAddress(id.LocalAddress) ||
+		header.IsV6MulticastAddress(id.LocalAddress) ||
+		id.RemoteAddress == header.IPv6Any ||
+		id.RemoteAddress == header.IPv4Any {
 		return true
 	}
 
@@ -93,12 +99,22 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 	//     3 (Port Unreachable), when the designated transport protocol
 	//     (e.g., UDP) is unable to demultiplex the datagram but has no
 	//     protocol mechanism to inform the sender.
+	//
+	//
+	//
+	//
+	//
+	//
+	//
 	switch len(id.LocalAddress) {
 	case header.IPv4AddressSize:
+
+
 		if !r.Stack().AllowICMPMessage() {
 			r.Stack().Stats().ICMP.V4PacketsSent.RateLimited.Increment()
 			return true
 		}
+
 		// As per RFC 1812 Section 4.3.2.3
 		//
 		//   ICMP datagram SHOULD contain as much of the original
@@ -110,6 +126,13 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		// bytes of the payload must be included. Today linux and other
 		// systems implement the] RFC1812 definition and not the original
 		// RFC 1122 requirement.
+		//
+		//
+		// ICMP 数据报应包含尽可能多的原始数据报，但 ICMP 数据报的长度不应超过 576 字节。
+		//
+		// 注意：RFC 1812 与 RFC 1122 中的原始建议不同，在 RFC 1122 中提到必须包含至少 8 个字节的有效载荷。
+		// 现在，linux 和其他系统执行的是 RFC 1812 ，而不是最初 RFC 1122 的要求。
+		//
 		mtu := int(r.MTU())
 		if mtu > header.IPv4MinimumProcessableDatagramSize {
 			mtu = header.IPv4MinimumProcessableDatagramSize
@@ -141,6 +164,7 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		})
 
 	case header.IPv6AddressSize:
+
 		if !r.Stack().AllowICMPMessage() {
 			r.Stack().Stats().ICMP.V6PacketsSent.RateLimited.Increment()
 			return true
@@ -153,6 +177,12 @@ func (p *protocol) HandleUnknownDestinationPacket(r *stack.Route, id stack.Trans
 		//    packet that caused the error) as possible without making
 		//    the error message packet exceed the minimum IPv6 MTU
 		//    [IPv6].
+		//
+		// 每条 ICMPv6 错误信息(type<128)必须尽可能多地包含 IPv6 违规数据包（导致错误的数据包），
+		// 而不能使错误信息数据包超过最小 IPv6 MTU [IPv6]。
+		//
+		//
+		//
 		mtu := int(r.MTU())
 		if mtu > header.IPv6MinimumMTU {
 			mtu = header.IPv6MinimumMTU

@@ -59,14 +59,14 @@ type Route struct {
 
 }
 
-// makeRoute initializes a new route. It takes ownership of the provided
-// reference to a network endpoint.
+// makeRoute initializes a new route.
+// It takes ownership of the provided reference to a network endpoint.
 func makeRoute(
-	netProto tcpip.NetworkProtocolNumber,
-	localAddr, remoteAddr tcpip.Address,
-	localLinkAddr tcpip.LinkAddress,
-	ref *referencedNetworkEndpoint,
-	handleLocal, multicastLoop bool,
+	netProto tcpip.NetworkProtocolNumber,	// 网络层协议号
+	localAddr, remoteAddr tcpip.Address,	// 本地 ip 地址、远端 ip 地址
+	localLinkAddr tcpip.LinkAddress,		// 本地 mac 地址
+	ref *referencedNetworkEndpoint,			//
+	handleLocal, multicastLoop bool,		//
 ) Route {
 
 	loop := PacketOut
@@ -85,37 +85,49 @@ func makeRoute(
 		LocalAddress:     localAddr,		// 本地 ip 地址
 		LocalLinkAddress: localLinkAddr,	// 本地 mac 地址
 		RemoteAddress:    remoteAddr,		// 远端 ip 地址
-		ref:              ref,				//
+		ref:              ref,				// 本地端点
 		Loop:             loop,				//
 	}
 }
 
 // NICID returns the id of the NIC from which this route originates.
+//
+// NICID 返回该路由所属的 NIC 的 ID。
 func (r *Route) NICID() tcpip.NICID {
 	return r.ref.ep.NICID()
 }
 
 // MaxHeaderLength forwards the call to the network endpoint's implementation.
+//
+// MaxHeaderLength 将调用转发给网络端点的实现。
 func (r *Route) MaxHeaderLength() uint16 {
 	return r.ref.ep.MaxHeaderLength()
 }
 
 // Stats returns a mutable copy of current stats.
+//
+// Stats 返回当前统计数据的一个可变副本。
 func (r *Route) Stats() tcpip.Stats {
 	return r.ref.nic.stack.Stats()
 }
 
 // PseudoHeaderChecksum forwards the call to the network endpoint's implementation.
+//
+// PseudoHeaderChecksum 将调用转发给网络端点的实现。
 func (r *Route) PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, totalLen uint16) uint16 {
 	return header.PseudoHeaderChecksum(protocol, r.LocalAddress, r.RemoteAddress, totalLen)
 }
 
 // Capabilities returns the link-layer capabilities of the route.
+//
+// Capabilities 返回路由的链路层能力。
 func (r *Route) Capabilities() LinkEndpointCapabilities {
 	return r.ref.ep.Capabilities()
 }
 
 // GSOMaxSize returns the maximum GSO packet size.
+//
+// GSOMaxSize 返回最大的 GSO 数据包大小。
 func (r *Route) GSOMaxSize() uint32 {
 	if gso, ok := r.ref.ep.(GSOEndpoint); ok {
 		return gso.GSOMaxSize()
@@ -130,17 +142,33 @@ func (r *Route) GSOMaxSize() uint32 {
 // If address resolution is required, ErrNoLinkAddress and a notification channel is
 // returned for the top level caller to block. Channel is closed once address resolution
 // is complete (success or not).
+//
+//
+// 在必要时，调用 Resolve() 尝试解析链接层地址。
+// 当地址解析需要阻塞时，返回 ErrWouldBlock ，例如等待 ARP 回复。
+// 当地址解析完成（成功或失败）时，Waker 会收到通知。
+//
+// 如果需要地址解析，则返回 ErrNoLinkAddress 和一个通知管道，供上层调用者阻塞式等待。
+// 地址解析完成后（无论成功与否），通道被 close 以通知调用者。
+//
 func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 
+
+	//
 	if !r.IsResolutionRequired() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
 		// link address is already known.
 		return nil, nil
 	}
 
+	// 获取下一跳地址
 	nextAddr := r.NextHop
+	// 如果下一跳地址为空，则取 RemoteAddress 地址
 	if nextAddr == "" {
+
 		// Local link address is already known.
+		//
+		// 如果 RemoteAddress 即为 LocalAddress ，则为本地通信，直接返回本地链路层地址 LocalLinkAddress 。
 		if r.RemoteAddress == r.LocalAddress {
 			r.RemoteLinkAddress = r.LocalLinkAddress
 			return nil, nil
@@ -148,11 +176,13 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		nextAddr = r.RemoteAddress
 	}
 
+	// 执行解析
 	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
 		return ch, err
 	}
 
+	//
 	r.RemoteLinkAddress = linkAddr
 	return nil, nil
 }
@@ -213,6 +243,7 @@ func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
 
 // WritePackets writes the set of packets through the given route.
 func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams) (int, *tcpip.Error) {
+
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
@@ -221,6 +252,7 @@ func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.V
 	if err != nil {
 		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
 	}
+
 	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
 	payloadSize := 0
 	for i := 0; i < n; i++ {
@@ -284,7 +316,10 @@ func (r *Route) Clone() Route {
 // not direction (source vs destination).
 func (r *Route) MakeLoopedRoute() Route {
 	l := r.Clone()
-	if r.RemoteAddress == header.IPv4Broadcast || header.IsV4MulticastAddress(r.RemoteAddress) || header.IsV6MulticastAddress(r.RemoteAddress) {
+	if r.RemoteAddress == header.IPv4Broadcast ||
+		header.IsV4MulticastAddress(r.RemoteAddress) ||
+		header.IsV6MulticastAddress(r.RemoteAddress) {
+
 		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
 		l.RemoteLinkAddress = l.LocalLinkAddress
 	}

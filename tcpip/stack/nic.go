@@ -72,18 +72,24 @@ type DirectionStats struct {
 type PrimaryEndpointBehavior int
 
 const (
+
+
 	// CanBePrimaryEndpoint indicates the endpoint can be used as a primary
 	// endpoint for new connections with no local address. This is the
 	// default when calling NIC.AddAddress.
+	//
+	// CanBePrimaryEndpoint 表示端点可以作为没有本地地址的新连接的主端点。
+	// 当调用 NIC.AddAddress 时，这是默认值。
 	CanBePrimaryEndpoint PrimaryEndpointBehavior = iota
+
 
 	// FirstPrimaryEndpoint indicates the endpoint should be the first
 	// primary endpoint considered. If there are multiple endpoints with
 	// this behavior, the most recently-added one will be first.
 	FirstPrimaryEndpoint
 
-	// NeverPrimaryEndpoint indicates the endpoint should never be a
-	// primary endpoint.
+
+	// NeverPrimaryEndpoint indicates the endpoint should never be a primary endpoint.
 	NeverPrimaryEndpoint
 )
 
@@ -581,6 +587,8 @@ func (n *NIC) insertPrimaryEndpointLocked(r *referencedNetworkEndpoint, peb Prim
 }
 
 func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
+
+
 	id := *r.ep.ID()
 
 	// Nothing to do if the reference has already been replaced with a different
@@ -1037,6 +1045,8 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 		}
 	}
 }
+
+
 
 //
 type referencedNetworkEndpoint struct {

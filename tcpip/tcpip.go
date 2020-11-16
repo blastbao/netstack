@@ -253,8 +253,8 @@ type ShutdownFlags int
 // Values of the flags that can be passed to the Shutdown() method. They can
 // be OR'ed together.
 const (
-	ShutdownRead ShutdownFlags = 1 << iota
-	ShutdownWrite
+	ShutdownRead ShutdownFlags = 1 << iota	// 半连接 - 关闭读
+	ShutdownWrite							// 半连接 - 关闭写
 )
 
 // FullAddress represents a full transport node address, as required by the
@@ -266,14 +266,20 @@ type FullAddress struct {
 	// NIC is the ID of the NIC this address refers to.
 	//
 	// This may not be used by all endpoint types.
+	//
+	// 网卡地址。
 	NIC NICID
 
 	// Addr is the network or link layer address.
+	//
+	// 网络 or 链路层地址。
 	Addr Address
 
 	// Port is the transport port.
 	//
 	// This may not be used by all endpoint types.
+	//
+	// 传输层端口。
 	Port uint16
 }
 
@@ -281,12 +287,16 @@ type FullAddress struct {
 //
 // This interface allows the endpoint to request the amount of data it needs
 // based on internal buffers without exposing them.
+//
+// Payloader 是提供数据的接口，此接口允许 endpoint 根据其内部缓冲区大小请求所需的数据。
 type Payloader interface {
 
 	// FullPayload returns all available bytes.
+	// FullPayload 返回所有可读字节。
 	FullPayload() ([]byte, *Error)
 
 	// Payload returns a slice containing at most size bytes.
+	// Payload 返回一个最多包含 size 个字节的分片。
 	Payload(size int) ([]byte, *Error)
 }
 
@@ -472,16 +482,30 @@ type EndpointStats interface {
 // WriteOptions contains options for Endpoint.Write.
 type WriteOptions struct {
 
-
 	// If To is not nil, write to the given address instead of the endpoint's peer.
 	// 如果 To 不是 nil ，则写到给定的地址而不是 endpoint 的 peer 。
 	To *FullAddress
 
-
 	// More has the same semantics as Linux's MSG_MORE.
 	// More 与 Linux 的 MSG_MORE 具有相同的语义。
+	//
+	// MSG_MORE 标记
+	// UDP 数据报不像 TCP ，它是有边界的，即发送端的一个 UDP 数据报会完整的被接收端以一个 UDP 数据报的方式接收。
+	// 然而，并非一次写操作对应一个 UDP 数据报，应用程序可以通过 MSG_MORE 标记或者 UDP_CORK 选项将多次写操作的
+	// 数据合并成一个 UDP 数据报发送。
+	//
+	// 具体操作流程如下：
+	// (1) 在调用 sendmsg() 时，flag 参数中设置 MSG_MORE 标记，表示还有更多数据要发送。
+	// 应用期望内核收到设置了该标记的数据时先不要将本次递交的数据发送给 IP 层，而是将其缓存，
+	// 并且将后面连续的设定了该标记的数据合并成同一个 UDP 报文（一个 IP 报文，但是可能是多个 IP 片段）。
+	// 直到没有设定该标记的发送时，将数据报发送给IP层；
+	//
+	// (2) 类似的，在开启和关闭 UDP_CORK 选项期间发送的所有数据也要组合成一个 UDP 报文发送给 IP 。
+	//
+	// 注意：应用程序在使用这种方式的时候必须要注意多次组合的数据最好不要超过 MTU ，
+	// 否则 IP 层就不得不将这些要组合的数据分成多个 IP 数据包发送出去，这样会造成性能的下降。
+	//
 	More bool
-
 
 	// EndOfRecord has the same semantics as Linux's MSG_EOR.
 	// EndOfRecord 的语义与 Linux 的 MSG_EOR 相同。

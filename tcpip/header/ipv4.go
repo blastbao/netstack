@@ -312,10 +312,12 @@ func (b IPv4) IsValid(pktSize int) bool {
 // address (range 224.0.0.0 to 239.255.255.255). The four most significant bits
 // will be 1110 = 0xe0.
 //
-// 判断是否为多播地址。
+// 判断是否为 IPv4 多播地址。
 func IsV4MulticastAddress(addr tcpip.Address) bool {
+	// 检查是否为四个字节
 	if len(addr) != IPv4AddressSize {
 		return false
 	}
+	// 检查标记位
 	return (addr[0] & 0xf0) == 0xe0
 }

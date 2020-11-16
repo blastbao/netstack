@@ -44,10 +44,10 @@ type EndpointState uint32
 // 请注意，这些状态是以 netstack 特有的方式来表示的，在外部可能没有意义。
 // 具体来说，如果向用户空间展示这些状态，需要翻译成 Linux 的表示方式。
 const (
-	StateInitial EndpointState = iota
-	StateBound
-	StateConnected
-	StateClosed
+	StateInitial EndpointState = iota	// 初始化
+	StateBound 							// 已绑定
+	StateConnected						// 已连接
+	StateClosed							// 已关闭
 )
 
 // String implements fmt.Stringer.String.
@@ -115,6 +115,9 @@ type endpoint struct {
 
 	// sendTOS represents IPv4 TOS or IPv6 TrafficClass, applied while sending packets.
 	// Defaults to 0 as on Linux.
+	//
+	// sendTOS 代表 IPv4 TOS 或 IPv6 TrafficClass，在发送数据包时应用。
+	// 默认值为 0，同在 Linux 上一样。
 	sendTOS uint8
 
 	// shutdownFlags represent the current shutdown state of the endpoint.
@@ -122,6 +125,9 @@ type endpoint struct {
 
 	// multicastMemberships that need to be remvoed when the endpoint is closed.
 	// Protected by the mu mutex.
+	//
+	// 当端点关闭时，需要移除 multicastMembership 。
+	// 由 mu mutex 保护。
 	multicastMemberships []multicastMembership
 
 	// effectiveNetProtos contains the network protocols actually in use.
@@ -130,6 +136,11 @@ type endpoint struct {
 	// protocols (e.g., IPv6 and IPv4) or a single different protocol (e.g.,
 	// IPv4 when IPv6 endpoint is bound or connected to an IPv4 mapped
 	// address).
+	//
+	// effectiveNetProtos 包含了使用的网络层协议(号)。
+	// 在大多数情况下，它只包含 "netProto"，但在 IPv6 端点 v6only 设置为 false 的情况下，
+	// 它可能包含多个协议（如 IPv6 和 IPv4 ）或单个不同的协议（如绑定到 IPv6 端点或连接到 IPv4 映射地址时的 IPv4 ）。
+	//
 	effectiveNetProtos []tcpip.NetworkProtocolNumber
 
 	// TODO(b/142022063): Add ability to save and restore per endpoint stats.
@@ -149,10 +160,10 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	return &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
-			NetProto:   netProto,
-			TransProto: header.UDPProtocolNumber,
+			NetProto:   netProto,					// 网络层协议号
+			TransProto: header.UDPProtocolNumber,	// 传输层协议号
 		},
-		waiterQueue: waiterQueue,
+		waiterQueue: waiterQueue,					// 等待队列
 
 
 		// RFC 1075 section 5.4 recommends a TTL of 1 for membership requests.
@@ -264,12 +275,24 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 // reacquire the mutex in exclusive mode.
 //
 // Returns true for retry if preparation should be retried.
+//
+// prepareForWrite 为发送数据的端点做准备。
+// 特别是，如果端点还处于 init 状态，会对其进行绑定。
+// 要做到这一点，必须先以独占模式重新获取 mutex 。
+//
+//
+//
 func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpip.Error) {
+
+
+	// 状态检查
+	// (1) 如果是 init 状态，需要重新绑定
+	// (2) 如果是 connected 状态，则直接返回
+	// (3) 如果是 bound 状态，则 ???
 	switch e.state {
 	case StateInitial:
 	case StateConnected:
 		return false, nil
-
 	case StateBound:
 		if to == nil {
 			return false, tcpip.ErrDestinationRequired
@@ -279,6 +302,8 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 		return false, tcpip.ErrInvalidEndpointState
 	}
 
+	// 至此，意味着 e 为 init 状态
+
 	e.mu.RUnlock()
 	defer e.mu.RLock()
 
@@ -287,11 +312,15 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 
 	// The state changed when we released the shared locked and re-acquired
 	// it in exclusive mode. Try again.
+	//
+	// 加锁之后，再次检查一次，确保当前仍处于 init 状态。
 	if e.state != StateInitial {
 		return true, nil
 	}
 
 	// The state is still 'initial', so try to bind the endpoint.
+	//
+	// 状态仍然是 init ，尝试进行端点绑定。
 	if err := e.bindLocked(tcpip.FullAddress{}); err != nil {
 		return false, err
 	}
@@ -338,8 +367,8 @@ func (e *endpoint) connectRoute(
 	return r, nicID, nil
 }
 
-// Write writes data to the endpoint's peer. This method does not block
-// if the data cannot be written.
+// Write writes data to the endpoint's peer.
+// This method does not block if the data cannot be written.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 	n, ch, err := e.write(p, opts)
 	switch err {
@@ -365,7 +394,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 
-
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -377,17 +405,19 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	defer e.mu.RUnlock()
 
 	// If we've shutdown with SHUT_WR we are in an invalid state for sending.
+	// 如果当前处于 ShutdownWrite 状态，则无法发送数据。
 	if e.shutdownFlags&tcpip.ShutdownWrite != 0 {
 		return 0, nil, tcpip.ErrClosedForSend
 	}
 
 	// Prepare for write.
+	// 准备写数据。
 	for {
 		retry, err := e.prepareForWrite(to)
 		if err != nil {
 			return 0, nil, err
 		}
-
+		// 如果 retry == false ，则 break ，否则继续重试。
 		if !retry {
 			break
 		}
@@ -396,6 +426,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	var route *stack.Route
 	var dstPort uint16
 	if to == nil {
+
 		route = &e.route
 		dstPort = e.dstPort
 
@@ -413,6 +444,8 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 				return 0, nil, tcpip.ErrInvalidEndpointState
 			}
 		}
+
+
 	} else {
 
 		// Reject destination address if it goes through a different
@@ -446,7 +479,9 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 
+	// 如果必须调用 Resolve() 来解析链路层地址，IsResolutionRequired 会返回 true 。
 	if route.IsResolutionRequired() {
+		//
 		if ch, err := route.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
 				return 0, ch, tcpip.ErrNoLinkAddress
@@ -456,15 +491,19 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 
+	// 从 p 中读取所有可读字节。
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
 
+	// 如果可读数据大小超过 UDP 最大报文长度，则报错。
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
+		// 有效载荷太大了，不可能装在一个包里。
 		return 0, nil, tcpip.ErrMessageTooLong
 	}
+
 
 	ttl := e.ttl
 	useDefaultTTL := ttl == 0 // 若 ttl 为 0 则需要使用默认的 ttl
@@ -478,13 +517,13 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 
 	// 发送 UDP 报文
 	if err := sendUDP(
-		route,
-		buffer.View(v).ToVectorisedView(),
-		e.ID.LocalPort,	// 本地端口
-		dstPort,		// 目的端口
-		ttl,			// 指定报文最大生存时间
-		useDefaultTTL,	// 是否使用默认报文最大生存时间 true/false
-		e.sendTOS, 		// 服务类型
+		route,								// 路由信息
+		buffer.View(v).ToVectorisedView(), 	// 数据
+		e.ID.LocalPort,						// 本地端口
+		dstPort,							// 目的端口
+		ttl,								// 指定报文最大生存时间
+		useDefaultTTL,						// 是否使用默认报文最大生存时间 true/false
+		e.sendTOS, 							// 服务类型
 	); err != nil {
 		return 0, nil, err
 	}
@@ -906,7 +945,11 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 }
 
 
-
+//
+//
+// 检查地址 addr 的有效性，返回关联的网络层协议号。
+//
+//
 func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (tcpip.NetworkProtocolNumber, *tcpip.Error) {
 
 	// 获取本 endpoint 的网络层协议号
@@ -937,7 +980,8 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 
 		// Fail if we are bound to an IPv6 address.
 		//
-		// 如果本 endpoint 绑定的是 IPv6 地址，则报错。(备注：UDP 情况下，allowMismatch 默认 false，则两端网络层协议必须匹配)
+		// 如果本 endpoint 绑定的是 IPv6 地址，则报错。
+		// (备注：UDP 情况下，allowMismatch 默认 false，则两端网络层协议必须匹配)
 		if !allowMismatch && len(e.ID.LocalAddress) == 16 {
 			return 0, tcpip.ErrNetworkUnreachable
 		}
@@ -981,7 +1025,7 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 		}
 		e.state = StateBound
 	} else {
-		// 释放端口
+		// 关闭连接，则释放端口
 		if e.ID.LocalPort != 0 {
 			// Release the ephemeral port.
 			e.stack.ReleasePort(e.effectiveNetProtos, ProtocolNumber, e.ID.LocalAddress, e.ID.LocalPort, e.bindToDevice)
@@ -1190,7 +1234,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
-	//
+	// 检查地址 addr 的有效性，返回关联的网络层协议号(IPv4 or IPv6)。
 	netProto, err := e.checkV4Mapped(&addr, true)
 	if err != nil {
 		return err
@@ -1200,6 +1244,13 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 	// wildcard (empty) address, and this is an IPv6 endpoint with v6only
 	// set to false.
 	netProtos := []tcpip.NetworkProtocolNumber{netProto}
+
+	// 如果:
+	// 	(1) e 是一个 IPv6 端点
+	//  (2) addr.Addr 为空，即欲与通配符（空）地址绑定
+	//  (3) v6only 设置为 false
+	// 则:
+	//  将 netProtos 扩展为包括 IPv4 和 IPv6 。
 	if netProto == header.IPv6ProtocolNumber && !e.v6only && addr.Addr == "" {
 		netProtos = []tcpip.NetworkProtocolNumber{
 			header.IPv6ProtocolNumber,
@@ -1207,9 +1258,17 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		}
 	}
 
+	// 网卡
 	nicID := addr.NIC
+
+	// 如果:
+	// 	(1) addr.Addr 非空
+	//  (2) addr.Addr 非广播或者多播地址
+	// 则:
+	//   addr.Addr 指定了本地的单播地址，需要检查该地址是否有效。
 	if len(addr.Addr) != 0 && !isBroadcastOrMulticast(addr.Addr) {
 		// A local unicast address was specified, verify that it's valid.
+		// 指定了一个本地单播地址，则验证它是否有效。
 		nicID = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nicID == 0 {
 			return tcpip.ErrBadLocalAddress
@@ -1222,12 +1281,13 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 		LocalAddress: addr.Addr, 	// 本地地址
 	}
 
-	//
+	// 将 endpoint<nic, netProtos, id> 注册到协议栈传输层，协议号指明为 UDP ，这样后续的 UDP 包会发送到本 endpoint 上来。
 	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
 	}
 
+	// 更新一些元数据
 	e.ID = id
 	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos
@@ -1255,7 +1315,7 @@ func (e *endpoint) Bind(addr tcpip.FullAddress) *tcpip.Error {
 
 	// Save the effective NICID generated by bindLocked.
 	//
-	//
+	// 保存 bindLocked 生成的有效 NICID。
 	e.BindNICID = e.RegisterNICID
 
 	return nil
@@ -1267,7 +1327,7 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 	defer e.mu.RUnlock()
 
 	return tcpip.FullAddress{
-		NIC:  e.RegisterNICID,
+		NIC:  e.RegisterNICID,		//
 		Addr: e.ID.LocalAddress,
 		Port: e.ID.LocalPort,
 	}, nil

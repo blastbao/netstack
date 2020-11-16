@@ -198,9 +198,11 @@ type PacketLooping byte
 
 const (
 	// PacketOut indicates that the packet should be passed to the link endpoint.
+	// PacketOut 表示应该将数据包传递给链路层端点。
 	PacketOut PacketLooping = 1 << iota
 
 	// PacketLoop indicates that the packet should be handled locally.
+	// PacketLoop 表示应该在本地处理数据包。
 	PacketLoop
 )
 
@@ -224,6 +226,7 @@ type NetworkHeaderParams struct {
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
 type NetworkEndpoint interface {
+
 	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6)
 	// for this endpoint.
 	DefaultTTL() uint8
@@ -233,9 +236,11 @@ type NetworkEndpoint interface {
 	// minus the network endpoint max header length.
 	MTU() uint32
 
+
 	// Capabilities returns the set of capabilities supported by the
 	// underlying link-layer endpoint.
 	Capabilities() LinkEndpointCapabilities
+
 
 	// MaxHeaderLength returns the maximum size the network (and lower
 	// level layers combined) headers can have. Higher levels use this
@@ -243,13 +248,14 @@ type NetworkEndpoint interface {
 	// building.
 	MaxHeaderLength() uint16
 
+
 	// WritePacket writes a packet to the given destination address and
 	// protocol. It sets pkt.NetworkHeader. pkt.TransportHeader must have
 	// already been set.
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
-	// WritePackets writes packets to the given destination address and
-	// protocol.
+
+	// WritePackets writes packets to the given destination address and protocol.
 	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) (int, *tcpip.Error)
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
@@ -450,11 +456,15 @@ type InjectableLinkEndpoint interface {
 // A LinkAddressResolver is an extension to a NetworkProtocol that
 // can resolve link addresses.
 type LinkAddressResolver interface {
+
+
 	// LinkAddressRequest sends a request for the LinkAddress of addr.
 	// The request is sent on linkEP with localAddr as the source.
 	//
 	// A valid response will cause the discovery protocol's network
 	// endpoint to call AddLinkAddress.
+	//
+	//
 	LinkAddressRequest(addr, localAddr tcpip.Address, linkEP LinkEndpoint) *tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
