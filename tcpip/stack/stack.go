@@ -1006,10 +1006,12 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
 
+	//
 	if len(localAddr) == 0 {
 		return nic.primaryEndpoint(netProto)
 	}
 
+	//
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
@@ -1044,14 +1046,16 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 
 		// 遍历路由表
 		for _, route := range s.routeTable {
-			// 不匹配：若网卡不匹配，或目标地址不匹配，则跳过当前表项
+
+			// [不匹配]：若网卡不匹配，或目标地址不匹配，则跳过当前表项
 			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr)) {
 				continue
 			}
 
-			// 匹配：取出网卡信息，
+			// [匹配]：取出网卡信息，
 			if nic, ok := s.nics[route.NIC]; ok {
 
+				//
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 
 					if len(remoteAddr) == 0 {

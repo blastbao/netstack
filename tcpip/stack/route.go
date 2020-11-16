@@ -290,19 +290,21 @@ func (r *Route) MTU() uint32 {
 }
 
 // Release frees all resources associated with the route.
+//
 // 释放
 func (r *Route) Release() {
 	if r.ref != nil {
-		r.ref.decRef()
+		r.ref.decRef() // 减少引用计数
 		r.ref = nil
 	}
 }
 
 // Clone Clone a route such that the original one can be released and the new
 // one will remain valid.
+//
 // 拷贝
 func (r *Route) Clone() Route {
-	r.ref.incRef()
+	r.ref.incRef()	// 增加引用计数
 	return *r
 }
 
@@ -316,10 +318,13 @@ func (r *Route) Clone() Route {
 // not direction (source vs destination).
 func (r *Route) MakeLoopedRoute() Route {
 	l := r.Clone()
+
+	// 如果目标地址是广播、多播地址，则把目标 MAC 地址置为本地 MAC 地址。
 	if r.RemoteAddress == header.IPv4Broadcast ||
 		header.IsV4MulticastAddress(r.RemoteAddress) ||
 		header.IsV6MulticastAddress(r.RemoteAddress) {
 
+		// swap(l.RemoteAddress, l.LocalAddress)
 		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
 		l.RemoteLinkAddress = l.LocalLinkAddress
 	}
