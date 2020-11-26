@@ -24,6 +24,8 @@ import (
 // NetworkEndpointID is the identifier of a network layer protocol endpoint.
 // Currently the local address is sufficient because all supported protocols
 // (i.e., IPv4 and IPv6) have different sizes for their addresses.
+//
+// NetworkEndpointID 是网络层端点的标识符。
 type NetworkEndpointID struct {
 	LocalAddress tcpip.Address
 }
@@ -115,7 +117,9 @@ type RawTransportEndpoint interface {
 // transport protocol endpoints. These endpoints receive link layer headers in
 // addition to whatever they contain (usually network and transport layer
 // headers and a payload).
+//
 type PacketEndpoint interface {
+
 	// HandlePacket is called by the stack when new packets arrive that
 	// match the endpoint.
 	//
@@ -126,6 +130,15 @@ type PacketEndpoint interface {
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket takes ownership of pkt.
+	//
+	//
+	// 当有与端点匹配的新数据包到达时，堆栈会调用 HandlePacket 。
+	//
+	// 实现者应将数据包视为不可更改的，在修改前应先将其复制。
+	//
+	// linkHeader 的长度可能为 0 ，在这种情况下，PacketEndpoint 应该为应用构建自己的以太网头。
+	//
+	// HandlePacket 拥有 pkt 的所有权。
 	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
 
@@ -225,6 +238,8 @@ type NetworkHeaderParams struct {
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
 // of network layer protocols (e.g., ipv4, ipv6).
+//
+// NetworkEndpoint 是网络层协议（如ipv4、ipv6）端点需要实现的接口。
 type NetworkEndpoint interface {
 
 	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6)
@@ -266,15 +281,19 @@ type NetworkEndpoint interface {
 	ID() *NetworkEndpointID
 
 	// PrefixLen returns the network endpoint's subnet prefix length in bits.
+	// PrefixLen 返回网络端点的子网前缀长度，单位为比特。
 	PrefixLen() int
 
 	// NICID returns the id of the NIC this endpoint belongs to.
+	// NICID 返回此端点所属的 NIC id。
 	NICID() tcpip.NICID
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint. It sets pkt.NetworkHeader.
 	//
 	// HandlePacket takes ownership of pkt.
+	//
+	// 当有新的数据包到达时，链路层会调用 HandlePacket 。
 	HandlePacket(r *Route, pkt tcpip.PacketBuffer)
 
 	// Close is called when the endpoint is reomved from a stack.
@@ -295,8 +314,10 @@ type NetworkProtocol interface {
 	// DefaultPrefixLen returns the protocol's default prefix length.
 	DefaultPrefixLen() int
 
-	// ParsePorts returns the source and destination addresses stored in a
+	// ParseAddresses returns the source and destination addresses stored in a
 	// packet of this protocol.
+	//
+	// ParseAddresses 返回存储在该协议数据包中的源地址和目的地址。
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.

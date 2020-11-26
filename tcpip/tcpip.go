@@ -143,9 +143,13 @@ type Clock interface {
 
 // Address is a byte slice cast as a string that represents the address of a
 // network node. Or, in the case of unix endpoints, it may represent a path.
+//
+// Address 代表一个网络地址。或者，在 unix 端点的情况下，它可以代表一个路径。
 type Address string
 
 // AddressMask is a bitmask for an address.
+//
+// AddressMask 是地址掩码。
 type AddressMask string
 
 // String implements Stringer.
@@ -154,6 +158,7 @@ func (m AddressMask) String() string {
 }
 
 // Prefix returns the number of bits before the first host bit.
+//
 func (m AddressMask) Prefix() int {
 	p := 0
 	for _, b := range []byte(m) {
@@ -1400,13 +1405,15 @@ func (a AddressWithPrefix) Subnet() Subnet {
 	return s
 }
 
-// ProtocolAddress is an address and the network protocol it is associated
-// with.
+// ProtocolAddress is an address and the network protocol it is associated with.
+// ProtocolAddress 是一个地址和它所关联的网络层协议。
 type ProtocolAddress struct {
 	// Protocol is the protocol of the address.
+	// Protocol 是地址关联的网络层协议号。
 	Protocol NetworkProtocolNumber
 
 	// AddressWithPrefix is a network address with its subnet prefix length.
+	// AddressWithPrefix 是一个具有子网前缀的网络地址。
 	AddressWithPrefix AddressWithPrefix
 }
 

@@ -73,6 +73,8 @@ type TCPCubicState struct {
 }
 
 // TCPEndpointID is the unique 4 tuple that identifies a given endpoint.
+//
+// TCP 四元组
 type TCPEndpointID struct {
 	// LocalPort is the local port associated with the endpoint.
 	LocalPort uint16
@@ -89,8 +91,9 @@ type TCPEndpointID struct {
 	RemoteAddress tcpip.Address
 }
 
-// TCPFastRecoveryState holds a copy of the internal fast recovery state of a
-// TCP endpoint.
+// TCPFastRecoveryState holds a copy of the internal fast recovery state of a TCP endpoint.
+//
+// TCP 快速恢复状态
 type TCPFastRecoveryState struct {
 	// Active if true indicates the endpoint is in fast recovery.
 	Active bool
@@ -119,8 +122,9 @@ type TCPFastRecoveryState struct {
 	RescueRxt seqnum.Value
 }
 
-// TCPReceiverState holds a copy of the internal state of the receiver for
-// a given TCP endpoint.
+// TCPReceiverState holds a copy of the internal state of the receiver for a given TCP endpoint.
+//
+//
 type TCPReceiverState struct {
 	// RcvNxt is the TCP variable RCV.NXT.
 	RcvNxt seqnum.Value
@@ -139,8 +143,7 @@ type TCPReceiverState struct {
 	PendingBufSize seqnum.Size
 }
 
-// TCPSenderState holds a copy of the internal state of the sender for
-// a given TCP Endpoint.
+// TCPSenderState holds a copy of the internal state of the sender for a given TCP Endpoint.
 type TCPSenderState struct {
 	// LastSendTime is the time at which we sent the last segment.
 	LastSendTime time.Time
@@ -679,6 +682,7 @@ func (s *Stack) SetForwarding(enable bool) {
 }
 
 // Forwarding returns if the packet forwarding between NICs is enabled.
+// 如果启用了 NIC 之间的数据包转发，则返回 true 。
 func (s *Stack) Forwarding() bool {
 	// TODO(igudger, bgeffon): Expose via /proc/sys/net/ipv4/ip_forward.
 	s.mu.RLock()
@@ -742,8 +746,8 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 	return s.rawFactory.NewPacketEndpoint(s, cooked, netProto, waiterQueue)
 }
 
-// createNIC creates a NIC with the provided id and link-layer endpoint, and
-// optionally enable it.
+
+// createNIC creates a NIC with the provided id and link-layer endpoint, and optionally enable it.
 func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled, loopback bool) *tcpip.Error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -832,17 +836,21 @@ func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 }
 
 // NICInfo captures the name and addresses assigned to a NIC.
+// NICInfo 包含网卡名称和地址。
 type NICInfo struct {
+	// 名称
 	Name              string
+	// MAC 地址
 	LinkAddress       tcpip.LinkAddress
+	// IP 地址
 	ProtocolAddresses []tcpip.ProtocolAddress
-
 	// Flags indicate the state of the NIC.
+	// 网卡状态(启动、停止、混淆、回环)
 	Flags NICStateFlags
-
 	// MTU is the maximum transmission unit.
+	// 最大传输单元
 	MTU uint32
-
+	// 统计信息(发送/接收的字节数、包数)
 	Stats NICStats
 }
 
@@ -872,17 +880,23 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 }
 
 // NICStateFlags holds information about the state of an NIC.
+// NICStateFlags 保存 NIC 的状态信息。
 type NICStateFlags struct {
+
 	// Up indicates whether the interface is running.
+	// Up 标识网卡是否正在运行。
 	Up bool
 
 	// Running indicates whether resources are allocated.
+	// Running 标识是否已分配资源。
 	Running bool
 
 	// Promiscuous indicates whether the interface is in promiscuous mode.
+	// Promiscuous 标识网卡是否处于混杂模式。
 	Promiscuous bool
 
 	// Loopback indicates whether the interface is a loopback.
+	// Loopback 标识网卡是否为环回。
 	Loopback bool
 }
 
@@ -891,8 +905,7 @@ func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber,
 	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
 }
 
-// AddProtocolAddress adds a new network-layer protocol address to the
-// specified NIC.
+// AddProtocolAddress adds a new network-layer protocol address to the specified NIC.
 func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *tcpip.Error {
 	return s.AddProtocolAddressWithOptions(id, protocolAddress, CanBePrimaryEndpoint)
 }
@@ -900,10 +913,13 @@ func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.Protoco
 // AddAddressWithOptions is the same as AddAddress, but allows you to specify
 // whether the new endpoint can be primary or not.
 func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) *tcpip.Error {
+
+
 	netProto, ok := s.networkProtocols[protocol]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
 	}
+
 	return s.AddProtocolAddressWithOptions(id, tcpip.ProtocolAddress{
 		Protocol: protocol,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
@@ -969,8 +985,7 @@ func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
 	return tcpip.ErrUnknownNICID
 }
 
-// AllAddresses returns a map of NICIDs to their protocol addresses (primary
-// and non-primary).
+// AllAddresses returns a map of NICIDs to their protocol addresses (primary and non-primary).
 func (s *Stack) AllAddresses() map[tcpip.NICID][]tcpip.ProtocolAddress {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1006,18 +1021,26 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
 
-	//
+	// 如果没有指定本地 IP 地址
 	if len(localAddr) == 0 {
+		// 根据网络层协议号创建一个 EP
 		return nic.primaryEndpoint(netProto)
 	}
 
-	//
+	// 如果指定了本地 IP 地址，
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
 // FindRoute creates a route to the given destination address,
 // leaving through the given nic and local address (if provided).
-func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (Route, *tcpip.Error) {
+//
+// FindRoute 创建一条通往给定目标地址的路由，通过给定的 nic 和本地地址（如果提供）来转发。
+func (s *Stack) FindRoute(
+	id tcpip.NICID, 						// 网卡 ID
+	localAddr, remoteAddr tcpip.Address, 	// 本地/远端 IP 地址
+	netProto tcpip.NetworkProtocolNumber,	// 网络层协议号
+	multicastLoop bool,						// 广播模式
+) (Route, *tcpip.Error) {
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1027,9 +1050,14 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
 
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
+
+	// 如果指定了网卡 ID 且不需路由解析（广播、多播、回环地址），则 ...
 	if id != 0 && !needRoute {
+
+		// 根据网卡 ID 取出网卡信息
 		if nic, ok := s.nics[id]; ok {
 
+			//
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 				return makeRoute(
 					netProto,
@@ -1047,7 +1075,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		// 遍历路由表
 		for _, route := range s.routeTable {
 
-			// [不匹配]：若网卡不匹配，或目标地址不匹配，则跳过当前表项
+			// [不匹配]：若网卡 ID 不匹配，或目标地址不匹配，则跳过当前表项
 			if (id != 0 && id != route.NIC) || (len(remoteAddr) != 0 && !route.Destination.Contains(remoteAddr)) {
 				continue
 			}
@@ -1057,13 +1085,13 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 
 				//
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-
+					// 如果没有设置 remoteAddr ，则将且设置为本地 mac 地址。
 					if len(remoteAddr) == 0 {
-						// If no remote address was provided,
-						// then the route provided will refer to the link local address.
+						// If no remote address was provided, then the route provided will refer to the link local address.
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
+					//
 					r := makeRoute(
 						netProto,                       // 网络协议
 						ref.ep.ID().LocalAddress,       // 本地 ip 地址
@@ -1151,33 +1179,35 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 }
 
 // SetPromiscuousMode enables or disables promiscuous mode in the given NIC.
+//
+// SetPromiscuousMode 启用或禁用指定 NIC 上的混杂模式。
 func (s *Stack) SetPromiscuousMode(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
+	// 检查网卡是否存在
 	nic := s.nics[nicID]
 	if nic == nil {
 		return tcpip.ErrUnknownNICID
 	}
-
+	// 设置混杂模式
 	nic.setPromiscuousMode(enable)
-
 	return nil
 }
 
 // SetSpoofing enables or disables address spoofing in the given NIC, allowing
 // endpoints to bind to any address in the NIC.
+//
+// SetSpoofing 启用或禁用指定 NIC 上的地址欺诈，允许端点绑定到 NIC 中的任何地址。
 func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
+	// 检查网卡是否存在
 	nic := s.nics[nicID]
 	if nic == nil {
 		return tcpip.ErrUnknownNICID
 	}
-
+	// 设置地址欺诈
 	nic.setSpoofing(enable)
-
 	return nil
 }
 
@@ -1372,15 +1402,21 @@ func (s *Stack) Close() {
 // Note that link endpoints must be stopped via an implementation specific
 // mechanism.
 func (s *Stack) Wait() {
+
+	//
 	for _, e := range s.RegisteredEndpoints() {
 		e.Wait()
 	}
+
+	//
 	for _, e := range s.CleanupEndpoints() {
 		e.Wait()
 	}
 
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	//
 	for _, n := range s.nics {
 		n.linkEP.Wait()
 	}
@@ -1389,8 +1425,8 @@ func (s *Stack) Wait() {
 // Resume restarts the stack after a restore. This must be called after the
 // entire system has been restored.
 func (s *Stack) Resume() {
-	// ResumableEndpoint.Resume() may call other methods on s, so we can't hold
-	// s.mu while resuming the endpoints.
+	// ResumableEndpoint.Resume() may call other methods on s,
+	// so we can't hold s.mu while resuming the endpoints.
 	s.mu.Lock()
 	eps := s.resumableEndpoints
 	s.resumableEndpoints = nil
@@ -1432,8 +1468,7 @@ func (s *Stack) RegisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.Network
 }
 
 // UnregisterPacketEndpoint unregisters ep for packets of the specified
-// netProto from the specified NIC. If nicID is 0, ep is unregistered from all
-// NICs.
+// netProto from the specified NIC. If nicID is 0, ep is unregistered from all NICs.
 func (s *Stack) UnregisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1458,8 +1493,8 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 	nic.unregisterPacketEndpoint(netProto, ep)
 }
 
-// WritePacket writes data directly to the specified NIC. It adds an ethernet
-// header based on the arguments.
+// WritePacket writes data directly to the specified NIC.
+// It adds an ethernet header based on the arguments.
 func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.VectorisedView) *tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicID]
@@ -1487,8 +1522,7 @@ func (s *Stack) WritePacket(nicID tcpip.NICID, dst tcpip.LinkAddress, netProto t
 	return nil
 }
 
-// WriteRawPacket writes data directly to the specified NIC without adding any
-// headers.
+// WriteRawPacket writes data directly to the specified NIC without adding any headers.
 func (s *Stack) WriteRawPacket(nicID tcpip.NICID, payload buffer.VectorisedView) *tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicID]
@@ -1505,8 +1539,9 @@ func (s *Stack) WriteRawPacket(nicID tcpip.NICID, payload buffer.VectorisedView)
 }
 
 // NetworkProtocolInstance returns the protocol instance in the stack for the
-// specified network protocol. This method is public for protocol implementers
-// and tests to use.
+// specified network protocol.
+//
+// This method is public for protocol implementers and tests to use.
 func (s *Stack) NetworkProtocolInstance(num tcpip.NetworkProtocolNumber) NetworkProtocol {
 	if p, ok := s.networkProtocols[num]; ok {
 		return p
@@ -1515,8 +1550,9 @@ func (s *Stack) NetworkProtocolInstance(num tcpip.NetworkProtocolNumber) Network
 }
 
 // TransportProtocolInstance returns the protocol instance in the stack for the
-// specified transport protocol. This method is public for protocol implementers
-// and tests to use.
+// specified transport protocol.
+//
+// This method is public for protocol implementers and tests to use.
 func (s *Stack) TransportProtocolInstance(num tcpip.TransportProtocolNumber) TransportProtocol {
 	if pState, ok := s.transportProtocols[num]; ok {
 		return pState.proto

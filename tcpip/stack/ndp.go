@@ -195,6 +195,7 @@ func (c *NDPConfigurations) validate() {
 
 // ndpState is the per-interface NDP state.
 type ndpState struct {
+
 	// The NIC this ndpState is for.
 	nic *NIC
 
