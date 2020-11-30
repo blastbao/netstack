@@ -25,7 +25,7 @@ import (
 // Currently the local address is sufficient because all supported protocols
 // (i.e., IPv4 and IPv6) have different sizes for their addresses.
 //
-// NetworkEndpointID 是网络层端点的标识符。
+// NetworkEndpointID 是网络层协议端点的标识符。
 type NetworkEndpointID struct {
 	LocalAddress tcpip.Address
 }
@@ -105,6 +105,7 @@ type TransportEndpoint interface {
 // packet - including the network and transport headers - as delivered to
 // netstack.
 type RawTransportEndpoint interface {
+
 	// HandlePacket is called by the stack when new packets arrive to
 	// this transport endpoint. The packet contains all data from the link
 	// layer up.
@@ -118,6 +119,8 @@ type RawTransportEndpoint interface {
 // addition to whatever they contain (usually network and transport layer
 // headers and a payload).
 //
+// PacketEndpoint 是需要由数据包传输协议端点实现的接口。
+// 这些端点除了接收它们所包含的内容（通常是网络和传输层头以及有效负载）之外，还接收链路层头。
 type PacketEndpoint interface {
 
 	// HandlePacket is called by the stack when new packets arrive that
@@ -131,13 +134,9 @@ type PacketEndpoint interface {
 	//
 	// HandlePacket takes ownership of pkt.
 	//
-	//
 	// 当有与端点匹配的新数据包到达时，堆栈会调用 HandlePacket 。
-	//
 	// 实现者应将数据包视为不可更改的，在修改前应先将其复制。
-	//
 	// linkHeader 的长度可能为 0 ，在这种情况下，PacketEndpoint 应该为应用构建自己的以太网头。
-	//
 	// HandlePacket 拥有 pkt 的所有权。
 	HandlePacket(nicID tcpip.NICID, addr tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
@@ -207,6 +206,7 @@ type TransportDispatcher interface {
 }
 
 // PacketLooping specifies where an outbound packet should be sent.
+// PacketLooping 指定出站数据包应该发送到哪里。
 type PacketLooping byte
 
 const (
@@ -242,31 +242,27 @@ type NetworkHeaderParams struct {
 // NetworkEndpoint 是网络层协议（如ipv4、ipv6）端点需要实现的接口。
 type NetworkEndpoint interface {
 
-	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6)
-	// for this endpoint.
+	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6) for this endpoint.
 	DefaultTTL() uint8
 
-	// MTU is the maximum transmission unit for this endpoint. This is
-	// generally calculated as the MTU of the underlying data link endpoint
-	// minus the network endpoint max header length.
+	// MTU is the maximum transmission unit for this endpoint.
+	// This is generally calculated as the MTU of the underlying data link
+	// endpoint minus the network endpoint max header length.
 	MTU() uint32
 
-
-	// Capabilities returns the set of capabilities supported by the
-	// underlying link-layer endpoint.
+	// Capabilities returns the set of capabilities supported by the underlying link-layer endpoint.
+	// Capabilities 返回底层链路层端点支持的能力集。
 	Capabilities() LinkEndpointCapabilities
 
-
-	// MaxHeaderLength returns the maximum size the network (and lower
-	// level layers combined) headers can have. Higher levels use this
-	// information to reserve space in the front of the packets they're
-	// building.
+	// MaxHeaderLength returns the maximum size the network (and lower level layers combined) headers can have.
+	// Higher levels use this information to reserve space in the front of the packets they're building.
 	MaxHeaderLength() uint16
 
-
-	// WritePacket writes a packet to the given destination address and
-	// protocol. It sets pkt.NetworkHeader. pkt.TransportHeader must have
-	// already been set.
+	// WritePacket writes a packet to the given destination address and protocol.
+	// It sets pkt.NetworkHeader. pkt.TransportHeader must have already been set.
+	//
+	// WritePacket 将一个数据包写入给定的目标地址和协议。
+	// 它设置了 pkt.NetworkHeader，而 pkt.TransportHeader 必须已被设置。
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
 
@@ -275,6 +271,8 @@ type NetworkEndpoint interface {
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address.
+	//
+	// WriteHeaderIncludedPacket 将包含网络头的数据包写入给定的目标地址。
 	WriteHeaderIncludedPacket(r *Route, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
 	// ID returns the network protocol endpoint ID.
@@ -303,6 +301,7 @@ type NetworkEndpoint interface {
 // NetworkProtocol is the interface that needs to be implemented by network
 // protocols (e.g., ipv4, ipv6) that want to be part of the networking stack.
 type NetworkProtocol interface {
+
 	// Number returns the network protocol number.
 	Number() tcpip.NetworkProtocolNumber
 
@@ -337,7 +336,11 @@ type NetworkProtocol interface {
 // NetworkDispatcher contains the methods used by the network stack to deliver
 // packets to the appropriate network endpoint after it has been handled by
 // the data link layer.
+//
+// NetworkDispatcher 包含网络协议栈在数据链路层处理完数据包后将数据包传递到适当的网络层端点的方法。
+//
 type NetworkDispatcher interface {
+
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
 	//
@@ -346,14 +349,22 @@ type NetworkDispatcher interface {
 	// packets sent via loopback), and won't have the field set.
 	//
 	// DeliverNetworkPacket takes ownership of pkt.
+	//
+	// DeliverNetworkPacket 找到适当的网络层协议端点，并将数据包移交给它进一步处理。
+	// 在调用 DeliverNetworkPacket 之前，可能会也可能不会设置 pkt.LinkHeader 字段。
+	// 某些数据包没有数据链路层头（例如，通过环回发送的数据包），将不会设置该字段。
+	// DeliverNetworkPacket 拥有 pkt 的所有权。
 	DeliverNetworkPacket(linkEP LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
 // supported by a link-layer endpoint. It is a set of bitfields.
+//
+// LinkEndpointCapabilities 描述链路层端点支持的功能。
 type LinkEndpointCapabilities uint
 
 // The following are the supported link endpoint capabilities.
+// 以下是支持的链接层端点功能。
 const (
 
 	CapabilityNone LinkEndpointCapabilities = 0
@@ -365,16 +376,16 @@ const (
 	// CapabilityTXChecksumOffload 表示链路层端点支持对出栈数据包进行校验和计算，
 	// 此时，网络层在发送数据包时可以跳过计算校验和。
 	//
-	//
 	// CheckSum Offload 实际上就是是将 TCP/UDP/IP 校验和工作交给了网卡硬件完成，以节约系统的 CPU 资源。
-	// 譬如：以太网发送网卡计算以太网 CRC32 校验和，接收网卡验证这个校验和。
-	// 如果接收到的校验和错误，网卡会在内部丢弃数据包。
+	// 譬如：以太网发送网卡计算以太网 CRC32 校验和，接收网卡验证这个校验和。如果接收到的校验和错误，网卡会在内部丢弃数据包。
 	CapabilityTXChecksumOffload LinkEndpointCapabilities = 1 << iota
 
 
 	// CapabilityRXChecksumOffload indicates that the link endpoint supports
 	// checksum verification on received packets and that it's safe for the
 	// stack to skip checksum verification.
+	//
+	// CapabilityRXChecksumOffload 表示链路层端点支持对接收到的数据包进行校验和验证，对于协议栈而言，跳过校验和验证是安全的。
 	CapabilityRXChecksumOffload
 
 	CapabilityResolutionRequired
@@ -385,9 +396,10 @@ const (
 
 	// CapabilitySoftwareGSO indicates the link endpoint supports of sending
 	// multiple packets using a single call (LinkEndpoint.WritePackets).
+	//
+	// CapabilitySoftwareGSO 表示链接端点支持使用单个调用发送多个数据包（ LinkEndpoint.WritePackets ）。
 	CapabilitySoftwareGSO
 )
-
 
 
 // LinkEndpoint is the interface implemented by data link layer protocols (e.g.,
@@ -397,25 +409,43 @@ const (
 // When a link header exists, it sets each tcpip.PacketBuffer's LinkHeader field
 // before passing it up the stack.
 //
+//
+// LinkEndpoint 是由数据链路层协议（例如，以太网，环回，原始）实现的接口，
+// 被网络层协议用来发送数据包到关联的数据链路层。
+//
+// 当数据链接层报头存在时，在将数据传递到协议栈之前要设置每个 tcpip.PacketBuffer 的 LinkHeader 字段。
+//
 type LinkEndpoint interface {
 
 	// MTU is the maximum transmission unit for this endpoint. This is
 	// usually dictated by the backing physical network; when such a
 	// physical network doesn't exist, the limit is generally 64k, which
 	// includes the maximum size of an IP packet.
+	//
+	// MTU 是此端点的最大传输单元。
+	// MTU 通常由支持的物理网络决定；当物理网络不存在时，限制通常为 64k ，其中包括 IP 数据包的最大大小。
 	MTU() uint32
 
 	// Capabilities returns the set of capabilities supported by the endpoint.
+	//
+	// Capabilities 返回端点支持的功能集。
 	Capabilities() LinkEndpointCapabilities
 
 	// MaxHeaderLength returns the maximum size the data link (and
 	// lower level layers combined) headers can have. Higher levels use this
 	// information to reserve space in the front of the packets they're
 	// building.
+	//
+	// MaxHeaderLength 返回数据链接层报头的最大大小。
+	// 高层协议使用此信息在正在构建的数据包的前面保留空间。
 	MaxHeaderLength() uint16
 
+
 	// LinkAddress returns the link address (typically a MAC) of the link endpoint.
+	//
+	// LinkAddress 返回链路层端点的链路层地址（通常为MAC）。
 	LinkAddress() tcpip.LinkAddress
+
 
 	// WritePacket writes a packet with the given protocol through the
 	// given route. It sets pkt.LinkHeader if a link layer header exists.
@@ -425,7 +455,15 @@ type LinkEndpoint interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// r.LocalLinkAddress if it is provided.
+	//
+	//
+	// WritePacket 通过给定的路由写入指定协议的数据包。
+	// 如果存在数据链接层头，则需设置 pkt.LinkHeader ，而 pkt.NetworkHeader 和 pkt.TransportHeader 必须被设置。
+	//
+	// 要参与透明桥接，实现 LinkEndpoint 接口的对象应调用 eth.Encode 并将 header.EthernetFields.SrcAddr 设置
+	// 为 r.LocalLinkAddress（如果已提供）。
 	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error
+
 
 	// WritePackets writes packets with the given protocol through the
 	// given route.
@@ -433,18 +471,29 @@ type LinkEndpoint interface {
 	// Right now, WritePackets is used only when the software segmentation
 	// offload is enabled. If it will be used for something else, it may
 	// require to change syscall filters.
+	//
+	// WritePackets 通过给定的路由写入指定协议的数据包。
+	// 现在，仅在启用软件分段卸载时才使用 WritePackets 。
+	// 如果将其用于其他用途，则可能需要更改 syscall filters 。
 	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 
-	// WriteRawPacket writes a packet directly to the link. The packet
-	// should already have an ethernet header.
+
+	// WriteRawPacket writes a packet directly to the link.
+	// The packet should already have an ethernet header.
+	//
+	// WriteRawPacket 直接向数据链路层写入一个数据包。该数据包已经添加以太网头。
 	WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error
 
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
+	//
+	// Attach 将数据链路层端点连接到协议栈的网络层调度器。
 	Attach(dispatcher NetworkDispatcher)
 
 	// IsAttached returns whether a NetworkDispatcher is attached to the
 	// endpoint.
+	//
+	// IsAttached 返回 NetworkDispatcher 是否连接到端点。
 	IsAttached() bool
 
 	// Wait waits for any worker goroutines owned by the endpoint to stop.
@@ -454,6 +503,13 @@ type LinkEndpoint interface {
 	//
 	// Wait will not block if the endpoint hasn't started any goroutines
 	// yet, even if it might later.
+	//
+	//
+	// Wait 等待端点拥有的任何 worker goroutines 停止。
+	//
+	// 目前，要求端点的 worker goroutine 停止是特定的实现。
+	//
+	// 如果端点还没有启动任何 goroutine ，即使以后可能会启动，Wait 也不会阻塞。
 	Wait()
 }
 
@@ -472,12 +528,15 @@ type InjectableLinkEndpoint interface {
 	//
 	// dest is used by endpoints with multiple raw destinations.
 	InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error
+
+
 }
 
 // A LinkAddressResolver is an extension to a NetworkProtocol that
 // can resolve link addresses.
+//
+// LinkAddressResolver 是 NetworkProtocol 的扩展，可以解析链接地址。
 type LinkAddressResolver interface {
-
 
 	// LinkAddressRequest sends a request for the LinkAddress of addr.
 	// The request is sent on linkEP with localAddr as the source.
@@ -485,7 +544,8 @@ type LinkAddressResolver interface {
 	// A valid response will cause the discovery protocol's network
 	// endpoint to call AddLinkAddress.
 	//
-	//
+	// LinkAddressRequest 发送对 addr 的 LinkAddress 的请求。
+	// 该请求在 linkEP 上发送，以 localAddr 作为源。
 	LinkAddressRequest(addr, localAddr tcpip.Address, linkEP LinkEndpoint) *tcpip.Error
 
 	// ResolveStaticAddress attempts to resolve address without sending
@@ -493,10 +553,15 @@ type LinkAddressResolver interface {
 	// empty LinkAddress.
 	//
 	// It can be used to resolve broadcast addresses for example.
+	//
+	// ResolveStaticAddress 尝试在不发送请求的情况下解析地址。它要么立即解析名称，要么返回空的 LinkAddress 。
+	// 例如，它可以用于解析广播地址。
 	ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bool)
 
 	// LinkAddressProtocol returns the network protocol of the
 	// addresses this this resolver can resolve.
+	//
+	// LinkAddressProtocol 返回此解析器可以解析的网络协议。
 	LinkAddressProtocol() tcpip.NetworkProtocolNumber
 }
 

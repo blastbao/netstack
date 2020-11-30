@@ -81,18 +81,27 @@ type IPv4 []byte
 
 const (
 	// IPv4MinimumSize is the minimum size of a valid IPv4 packet.
+	//
+	// IPv4MinimumSize 是一个有效 IPv4 数据包的最小尺寸。
 	IPv4MinimumSize = 20
 
 	// IPv4MaximumHeaderSize is the maximum size of an IPv4 header. Given
 	// that there are only 4 bits to represents the header length in 32-bit
 	// units, the header cannot exceed 15*4 = 60 bytes.
+	//
+	// IPv4MaximumHeaderSize 是一个 IPv4 报头的最大尺寸。
+	// 由于只有 4 位代表 32 位单位的报头长度，所以报头不能超过 15*4=60 字节。
 	IPv4MaximumHeaderSize = 60
 
 	// MinIPFragmentPayloadSize is the minimum number of payload bytes that
 	// the first fragment must carry when an IPv4 packet is fragmented.
+	//
+	// MinIPFragmentPayloadSize 是指当一个 IPv4 数据包被分片时，
+	// 首个分片必须携带的最小有效载荷字节数。
 	MinIPFragmentPayloadSize = 8
 
 	// IPv4AddressSize is the size, in bytes, of an IPv4 address.
+	// IPv4AddressSize 是 IPv4 地址的大小，以字节为单位。
 	IPv4AddressSize = 4
 
 	// IPv4ProtocolNumber is IPv4's network protocol number.
@@ -103,8 +112,7 @@ const (
 	IPv4Version = 4
 
 	// IPv4Broadcast is the broadcast address of the IPv4 procotol.
-	//
-	//
+	// IPv4Broadcast 是 IPv4 procotol 的广播地址。
 	IPv4Broadcast tcpip.Address = "\xff\xff\xff\xff"
 
 	// IPv4Any is the non-routable IPv4 "any" meta address.
@@ -122,6 +130,8 @@ const (
 	// IPv4MinimumProcessableDatagramSize is the minimum size of an IP
 	// packet that every IPv4 capable host must be able to
 	// process/reassemble.
+	//
+	// IPv4MinimumProcessableDatagramSize 是每个 IPv4 主机必须能够 处理/重组 的 IP 数据包的最小尺寸。
 	IPv4MinimumProcessableDatagramSize = 576
 )
 

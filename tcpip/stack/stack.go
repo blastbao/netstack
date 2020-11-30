@@ -38,10 +38,13 @@ import (
 )
 
 const (
+
 	// ageLimit is set to the same cache stale time used in Linux.
 	ageLimit = 1 * time.Minute
+
 	// resolutionTimeout is set to the same ARP timeout used in Linux.
 	resolutionTimeout = 1 * time.Second
+
 	// resolutionAttempts is set to the same ARP retries used in Linux.
 	resolutionAttempts = 3
 
@@ -356,13 +359,19 @@ func (u *uniqueIDGenerator) UniqueID() uint64 {
 }
 
 // Stack is a networking stack, with all supported protocols, NICs, and route table.
+//
+// Stack 是一个网络堆栈，其中包含所支持的协议、网卡和路由表。
 type Stack struct {
+
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
 	linkAddrResolvers  map[tcpip.NetworkProtocolNumber]LinkAddressResolver
 
-	// rawFactory creates raw endpoints. If nil, raw endpoints are
-	// disabled. It is set during Stack creation and is immutable.
+	// rawFactory creates raw endpoints. If nil, raw endpoints are disabled.
+	// It is set during Stack creation and is immutable.
+	//
+	// rawFactory 创建原始端点。如果为零，则禁用原始端点。
+	// rawFactory 是在创建堆栈时设置的，是不可改变的。
 	rawFactory RawFactory
 
 	demux *transportDemuxer
@@ -539,6 +548,7 @@ func New(opts Options) *Stack {
 	}
 
 	// Make sure opts.NDPConfigs contains valid values only.
+	// 确保 opts.NDPConfigs 只包含有效值。
 	opts.NDPConfigs.validate()
 
 	// 初始化构造 stack
@@ -562,12 +572,17 @@ func New(opts Options) *Stack {
 	}
 
 	// Add specified network protocols.
-	// 初始化网络层协议
+	// 根据 opt 选项，初始化 stack 所能支持的网络层协议。
 	for _, netProto := range opts.NetworkProtocols {
 		s.networkProtocols[netProto.Number()] = netProto
+
+
+		// ???
 		if r, ok := netProto.(LinkAddressResolver); ok {
 			s.linkAddrResolvers[r.LinkAddressProtocol()] = r
 		}
+
+
 	}
 
 	// Add specified transport protocols.
@@ -579,9 +594,11 @@ func New(opts Options) *Stack {
 	}
 
 	// Add the factory for raw endpoints, if present.
+	// 如果存在的话，设置原始端点的工厂。
 	s.rawFactory = opts.RawFactory
 
 	// Create the global transport demuxer.
+	// 创建全局传输解调器。
 	s.demux = newTransportDemuxer(s)
 
 	return s
@@ -823,12 +840,12 @@ func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 }
 
 // NICSubnets returns a map of NICIDs to their associated subnets.
+// NICSubnets 返回 NICID 到其关联子网的映射。
 func (s *Stack) NICAddressRanges() map[tcpip.NICID][]tcpip.Subnet {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	nics := map[tcpip.NICID][]tcpip.Subnet{}
-
 	for id, nic := range s.nics {
 		nics[id] = append(nics[id], nic.AddressRanges()...)
 	}
@@ -1018,12 +1035,11 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 }
 
 //
-
 func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) (ref *referencedNetworkEndpoint) {
 
 	// 如果没有指定本地 IP 地址
 	if len(localAddr) == 0 {
-		// 根据网络层协议号创建一个 EP
+		// 获取网卡 nic 上与网络协议号 netProto 关联的主端点。
 		return nic.primaryEndpoint(netProto)
 	}
 
@@ -1057,16 +1073,18 @@ func (s *Stack) FindRoute(
 		// 根据网卡 ID 取出网卡信息
 		if nic, ok := s.nics[id]; ok {
 
-			//
+			// 根据 网卡、本地 IP 地址、网络协议号来获取关联的 RefNetworkEndpoint
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+
+				//
 				return makeRoute(
-					netProto,
-					ref.ep.ID().LocalAddress,
-					remoteAddr,
-					nic.linkEP.LinkAddress(),
-					ref,
-					s.handleLocal && !nic.loopback,
-					multicastLoop && !nic.loopback,
+					netProto,							// 网络层协议号
+					ref.ep.ID().LocalAddress,			// 本地 IP 地址
+					remoteAddr, 						// 目的 IP 地址
+					nic.linkEP.LinkAddress(),			// 本地 MAC 地址
+					ref,								// 远端 RefNetworkEndpoint
+					s.handleLocal && !nic.loopback, 	// 回环处理
+					multicastLoop && !nic.loopback,     // 多播处理
 				), nil
 			}
 		}
@@ -1083,9 +1101,10 @@ func (s *Stack) FindRoute(
 			// [匹配]：取出网卡信息，
 			if nic, ok := s.nics[route.NIC]; ok {
 
-				//
+				// 根据 网卡、本地 IP 地址、网络协议号来获取关联的 RefNetworkEndpoint
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
-					// 如果没有设置 remoteAddr ，则将且设置为本地 mac 地址。
+
+					// 如果没有设置 remoteAddr ，则将其设置为本地 mac 地址。
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route provided will refer to the link local address.
 						remoteAddr = ref.ep.ID().LocalAddress
@@ -1097,9 +1116,9 @@ func (s *Stack) FindRoute(
 						ref.ep.ID().LocalAddress,       // 本地 ip 地址
 						remoteAddr,                     // 远端 ip 地址
 						nic.linkEP.LinkAddress(),       // 本地 mac 地址
-						ref,                            // 远端 endpoint
+						ref,                            // 远端 RefNetworkEndpoint
 						s.handleLocal && !nic.loopback, // 回环
-						multicastLoop && !nic.loopback, // 回环
+						multicastLoop && !nic.loopback, // 多播
 					)
 
 					// 设置下一跳为网关 ip 地址
@@ -1149,15 +1168,16 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 			return 0
 		}
 
-		//
+		// 根据网络协议号、本地 IP 地址、端点类型确定 ENndPoint
 		ref := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
 		if ref == nil {
 			return 0
 		}
 
-		//
+		// 减引用
 		ref.decRef()
 
+		// 返回网卡 ID
 		return nic.id
 	}
 
@@ -1165,8 +1185,6 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 	//
 	// 如果未指定网卡，则遍历所有网卡来查找地址。
 	for _, nic := range s.nics {
-
-
 		ref := nic.findEndpoint(protocol, addr, CanBePrimaryEndpoint)
 		if ref != nil {
 			ref.decRef()

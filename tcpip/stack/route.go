@@ -23,6 +23,19 @@ import (
 
 // Route represents a route through the networking stack to a given destination.
 // Route 表示通过网络栈到达目的地的路由信息。
+//
+// 主要有：
+//  目的 IP 地址
+//  目的 MAC 地址
+//  本地 IP 地址
+//  本地 MAC 地址
+//  下一跳 IP 地址
+//  网络层协议号
+//  本地网络层端点
+//  回环处理标识
+//
+//
+//
 type Route struct {
 
 	// RemoteAddress is the final destination of the route.
@@ -61,12 +74,14 @@ type Route struct {
 
 // makeRoute initializes a new route.
 // It takes ownership of the provided reference to a network endpoint.
+//
+// makeRoute 初始化一个新的路由，它对所提供的网络端点引用 ref 拥有所有权。
 func makeRoute(
 	netProto tcpip.NetworkProtocolNumber,	// 网络层协议号
 	localAddr, remoteAddr tcpip.Address,	// 本地 ip 地址、远端 ip 地址
 	localLinkAddr tcpip.LinkAddress,		// 本地 mac 地址
-	ref *referencedNetworkEndpoint,			//
-	handleLocal, multicastLoop bool,		//
+	ref *referencedNetworkEndpoint,			// 引用的网络层端点
+	handleLocal, multicastLoop bool,		// 回环、多播
 ) Route {
 
 	loop := PacketOut
@@ -80,13 +95,14 @@ func makeRoute(
 		loop |= PacketLoop
 	}
 
+	//
 	return Route{
 		NetProto:         netProto,			// 网络协议
 		LocalAddress:     localAddr,		// 本地 ip 地址
 		LocalLinkAddress: localLinkAddr,	// 本地 mac 地址
 		RemoteAddress:    remoteAddr,		// 远端 ip 地址
 		ref:              ref,				// 本地端点
-		Loop:             loop,				//
+		Loop:             loop,				// 回环
 	}
 }
 
@@ -135,6 +151,9 @@ func (r *Route) GSOMaxSize() uint32 {
 	return 0
 }
 
+
+
+
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
 // case address resolution requires blocking, e.g. wait for ARP reply. Waker is
 // notified when address resolution is complete (success or not).
@@ -144,17 +163,20 @@ func (r *Route) GSOMaxSize() uint32 {
 // is complete (success or not).
 //
 //
-// 在必要时，调用 Resolve() 尝试解析链接层地址。
+// 在必要时，调用 Resolve() 尝试解析链接层地址(MAC地址)。
 // 当地址解析需要阻塞时，返回 ErrWouldBlock ，例如等待 ARP 回复。
 // 当地址解析完成（成功或失败）时，Waker 会收到通知。
 //
 // 如果需要地址解析，则返回 ErrNoLinkAddress 和一个通知管道，供上层调用者阻塞式等待。
 // 地址解析完成后（无论成功与否），通道被 close 以通知调用者。
 //
+//
+//
+// Resolve() 函数根据下一跳 IP 地址解析出目标 Mac 地址，保存到 r.RemoteLinkAddress 变量。
+//
 func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 
-
-	//
+	// 如果不需解析，则直接返回。
 	if !r.IsResolutionRequired() {
 		// Nothing to do if there is no cache (which does the resolution on cache miss) or
 		// link address is already known.
@@ -163,12 +185,11 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 
 	// 获取下一跳地址
 	nextAddr := r.NextHop
-	// 如果下一跳地址为空，则取 RemoteAddress 地址
-	if nextAddr == "" {
 
+	// 如果下一跳 IP 地址为空，则取目标 IP 地址作为下一跳。
+	if nextAddr == "" {
 		// Local link address is already known.
-		//
-		// 如果 RemoteAddress 即为 LocalAddress ，则为本地通信，直接返回本地链路层地址 LocalLinkAddress 。
+		// 如果 RemoteAddress 即为 LocalAddress ，则为本地通信，直接把目标 MAC 地址设置为本地 MAC 地址。
 		if r.RemoteAddress == r.LocalAddress {
 			r.RemoteLinkAddress = r.LocalLinkAddress
 			return nil, nil
@@ -176,13 +197,14 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		nextAddr = r.RemoteAddress
 	}
 
-	// 执行解析
+
+	// 执行链路层地址解析（如 ARP 解析）
 	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
 	if err != nil {
 		return ch, err
 	}
 
-	//
+	// 把解析出的 MAC 地址保存到 r.RemoteLinkAddress 变量上
 	r.RemoteLinkAddress = linkAddr
 	return nil, nil
 }
@@ -205,19 +227,26 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
+// WritePacket 通过给定路由写入数据包。
 func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
 
+	// 检查端点是否可用来发送数据包
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
+	// 调用 ref 引用的真实网络层端点的 WritePacket() 方法，将数据包写入到网络层。
 	err := r.ref.ep.WritePacket(r, gso, params, r.Loop, pkt)
 	if err != nil {
+		// 更新发包错误数
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 	} else {
+		// 更新发送包数
 		r.ref.nic.stats.Tx.Packets.Increment()
+		// 更新发送字节数
 		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 	}
+
 
 	return err
 }
@@ -225,10 +254,12 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 
 // PacketDescriptor is a packet descriptor which contains a packet header and
 // offset and size of packet data in a payload view.
+//
+// PacketDescriptor 是数据包描述符。
 type PacketDescriptor struct {
-	Hdr  buffer.Prependable
-	Off  int
-	Size int
+	Hdr  buffer.Prependable 	// 包头
+	Off  int					// payload 偏移量
+	Size int					// payload 大小
 }
 
 // NewPacketDescriptors allocates a set of packet descriptors.
@@ -244,21 +275,31 @@ func NewPacketDescriptors(n int, hdrSize int) []PacketDescriptor {
 // WritePackets writes the set of packets through the given route.
 func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams) (int, *tcpip.Error) {
 
+
+	// 检查端点是否可用来发送数据包
 	if !r.ref.isValidForOutgoing() {
 		return 0, tcpip.ErrInvalidEndpointState
 	}
 
+
+	// 调用 ref 引用的真实网络层端点的 WritePackets() 方法，将数据包批量写入到网络层。
 	n, err := r.ref.ep.WritePackets(r, gso, hdrs, payload, params, r.Loop)
 	if err != nil {
+		// 更新发包错误数
 		r.Stats().IP.OutgoingPacketErrors.IncrementBy(uint64(len(hdrs) - n))
 	}
 
+	// 更新发送包数
 	r.ref.nic.stats.Tx.Packets.IncrementBy(uint64(n))
+
+	// 更新发送字节数(Header 部分)
 	payloadSize := 0
 	for i := 0; i < n; i++ {
 		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(hdrs[i].Hdr.UsedLength()))
 		payloadSize += hdrs[i].Size
 	}
+
+	// 更新发送字节数(Payload 部分)
 	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(payloadSize))
 	return n, err
 }
@@ -266,15 +307,21 @@ func (r *Route) WritePackets(gso *GSO, hdrs []PacketDescriptor, payload buffer.V
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
 func (r *Route) WriteHeaderIncludedPacket(pkt tcpip.PacketBuffer) *tcpip.Error {
+
+	// 检查端点是否可用来发送数据包
 	if !r.ref.isValidForOutgoing() {
 		return tcpip.ErrInvalidEndpointState
 	}
 
+	// 调用 ref 引用的真实网络层端点的 WriteHeaderIncludedPacket() 方法，将包含网络头的数据包写入给定的目标地址。
 	if err := r.ref.ep.WriteHeaderIncludedPacket(r, r.Loop, pkt); err != nil {
 		r.Stats().IP.OutgoingPacketErrors.Increment()
 		return err
 	}
+
+	// 更新发送包数
 	r.ref.nic.stats.Tx.Packets.Increment()
+	// 更新发送字节数
 	r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Data.Size()))
 	return nil
 }

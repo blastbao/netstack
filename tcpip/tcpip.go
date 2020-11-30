@@ -174,18 +174,22 @@ type Subnet struct {	// 子网
 }
 
 // NewSubnet creates a new Subnet, checking that the address and mask are the same length.
+// NewSubnet 创建一个新的子网，检查地址和掩码的长度是否相同。
 func NewSubnet(a Address, m AddressMask) (Subnet, error) {
 
+	// 地址和掩码的长度必须相同
 	if len(a) != len(m) {
 		return Subnet{}, errSubnetLengthMismatch
 	}
 
+	// 必须有效的子网地址
 	for i := 0; i < len(a); i++ {
 		if a[i]&^m[i] != 0 {
 			return Subnet{}, errSubnetAddressMasked
 		}
 	}
 
+	// 构造子网对象并返回
 	return Subnet{a, m}, nil
 }
 
@@ -1406,14 +1410,14 @@ func (a AddressWithPrefix) Subnet() Subnet {
 }
 
 // ProtocolAddress is an address and the network protocol it is associated with.
-// ProtocolAddress 是一个地址和它所关联的网络层协议。
+// ProtocolAddress 是一个网络层地址。
 type ProtocolAddress struct {
 	// Protocol is the protocol of the address.
-	// Protocol 是地址关联的网络层协议号。
+	// Protocol 是关联的网络层协议号。
 	Protocol NetworkProtocolNumber
 
 	// AddressWithPrefix is a network address with its subnet prefix length.
-	// AddressWithPrefix 是一个具有子网前缀的网络地址。
+	// AddressWithPrefix 是具有子网掩码的地址。
 	AddressWithPrefix AddressWithPrefix
 }
 
