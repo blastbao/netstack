@@ -35,20 +35,23 @@ const (
 	dstAddr            = 16
 )
 
-// IPv4Fields contains the fields of an IPv4 packet. It is used to describe the
-// fields of a packet that needs to be encoded.
+// IPv4Fields contains the fields of an IPv4 packet.
+// It is used to describe the fields of a packet that needs to be encoded.
 type IPv4Fields struct {
 
 	// IHL is the "internet header length" field of an IPv4 packet.
+	// IHL 是 IPv4 数据包的 “互联网报头长度” 字段。
 	IHL uint8
 
 	// TOS is the "type of service" field of an IPv4 packet.
+	// TOS 是 IPv4 数据包的 “服务类型” 字段。
 	TOS uint8
 
 	// TotalLength is the "total length" field of an IPv4 packet.
 	TotalLength uint16
 
 	// ID is the "identification" field of an IPv4 packet.
+	// ID 是 IPv4 数据包的 “标识” 字段。
 	ID uint16
 
 	// Flags is the "flags" field of an IPv4 packet.
@@ -77,6 +80,12 @@ type IPv4Fields struct {
 // Most of the methods of IPv4 access to the underlying slice without
 // checking the boundaries and could panic because of 'index out of range'.
 // Always call IsValid() to validate an instance of IPv4 before using other methods.
+//
+// IPv4 表示存储在字节数组中的 ipv4 标头。
+//
+// IPv4 提供的方法多数都是在不检查边界的情况下访问底层切片的，可能由于 “索引超出范围” 而出现 Panic 。
+//
+// 所以在使用 IPv4 提供的方法之前，请调用 IsValid() 来验证 IPv4 是否合法。
 type IPv4 []byte
 
 const (

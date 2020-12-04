@@ -51,9 +51,15 @@ const (
 //
 // Packets are checked by comparing their fields/values against the expected
 // values stored in the test object itself.
+//
+// testObject 实现两个接口：LinkEndpoint 和 TransportDispatcher 。
+// 前者用来假装它是链接层端点，以便我们可以检查网络端点写入的数据包。
+// 后者用来假装它是网络协议栈，以便它可以检查网络端点已处理的传入数据包。
+//
+// 通过比较它们的字段/值和存储在测试对象本身的预期值来检查数据包。
 type testObject struct {
 	t        *testing.T
-	protocol tcpip.TransportProtocolNumber
+	protocol tcpip.TransportProtocolNumber // 传输层协议号
 	contents []byte
 	srcAddr  tcpip.Address
 	dstAddr  tcpip.Address
@@ -66,10 +72,15 @@ type testObject struct {
 }
 
 // checkValues verifies that the transport protocol, data contents, src & dst
-// addresses of a packet match what's expected. If any field doesn't match, the
-// test fails.
+// addresses of a packet match what's expected. If any field doesn't match, the test fails.
+//
+// checkValues 验证数据包的传输协议、数据内容、SRC 和 DST 地址是否符合预期。
+// 如果任何字段不匹配，测试就会失败。
 func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, vv buffer.VectorisedView, srcAddr, dstAddr tcpip.Address) {
+
 	v := vv.ToView()
+
+	// 传输层协议号匹配
 	if protocol != t.protocol {
 		t.t.Errorf("protocol = %v, want %v", protocol, t.protocol)
 	}
@@ -151,6 +162,7 @@ func (*testObject) Wait() {}
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
 func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
@@ -160,13 +172,13 @@ func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.Ne
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
-
 	} else {
 		h := header.IPv6(pkt.Header.View())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 	}
+
 	t.checkValues(prot, pkt.Data, srcAddr, dstAddr)
 	return nil
 }
@@ -181,52 +193,82 @@ func (t *testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
 }
 
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
+
+	// 初始化网络协议栈
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol()},
+		// 支持的网络层协议：IPv4
+		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
+		// 支持的传输层协议：UDP, TCP
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
 	})
-	s.CreateNIC(1, loopback.New())
-	s.AddAddress(1, ipv4.ProtocolNumber, local)
-	s.SetRouteTable([]tcpip.Route{{
-		Destination: header.IPv4EmptySubnet,
-		Gateway:     ipv4Gateway,
-		NIC:         1,
-	}})
 
-	return s.FindRoute(1, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
+	// 创建网卡
+	s.CreateNIC(1, loopback.New())
+
+	// 添加地址
+	s.AddAddress(1, ipv4.ProtocolNumber, local)
+
+	// 设置路由表
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: header.IPv4EmptySubnet, // 目标子网
+			Gateway:     ipv4Gateway,            // 网关
+			NIC:         1,                      // 网卡
+		},
+	})
+
+	// 查找路由
+	return s.FindRoute(1, local, remote, ipv4.ProtocolNumber, false)
 }
 
 func buildIPv6Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
+	// 初始化网络协议栈
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol(), tcp.NewProtocol()},
 	})
+	// 创建网卡
 	s.CreateNIC(1, loopback.New())
+	// 添加地址
 	s.AddAddress(1, ipv6.ProtocolNumber, local)
-	s.SetRouteTable([]tcpip.Route{{
-		Destination: header.IPv6EmptySubnet,
-		Gateway:     ipv6Gateway,
-		NIC:         1,
-	}})
-
-	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
+	// 设置路由表
+	s.SetRouteTable([]tcpip.Route{
+		{
+			Destination: header.IPv6EmptySubnet,
+			Gateway:     ipv6Gateway,
+			NIC:         1,
+		},
+	})
+	// 查找路由
+	return s.FindRoute(1, local, remote, ipv6.ProtocolNumber, false)
 }
 
 func TestIPv4Send(t *testing.T) {
+
 	o := testObject{t: t, v4: true}
 	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, nil, &o)
+
+	// 根据链路层端点 o 构造网络层端点 ep 。
+	ep, err := proto.NewEndpoint( // 详见 netstack/tcpip/network/ipv4/ipv4.go 中实现。
+		1,
+		tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen},
+		nil,
+		nil,
+		&o, // 链路层端点
+	)
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
 	// Allocate and initialize the payload view.
+	// 分配并初始化有效载荷。
 	payload := buffer.NewView(100)
 	for i := 0; i < len(payload); i++ {
 		payload[i] = uint8(i)
 	}
 
 	// Allocate the header buffer.
+	// 分配头部缓冲区。
 	hdr := buffer.NewPrependable(int(ep.MaxHeaderLength()))
 
 	// Issue the write.
@@ -235,14 +277,27 @@ func TestIPv4Send(t *testing.T) {
 	o.dstAddr = remoteIpv4Addr
 	o.contents = payload
 
+	// 查找路由
 	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(&r, nil /* gso */, stack.NetworkHeaderParams{Protocol: 123, TTL: 123, TOS: stack.DefaultTOS}, stack.PacketOut, tcpip.PacketBuffer{
-		Header: hdr,
-		Data:   payload.ToVectorisedView(),
-	}); err != nil {
+
+	// 发送包到链路层
+	if err := ep.WritePacket(
+		&r,
+		nil,
+		stack.NetworkHeaderParams{
+			Protocol: 123,              // 传输层协议号。
+			TTL:      123,              // 报文最大生存时间。
+			TOS:      stack.DefaultTOS, // 服务类型，该字段描述了 IP 包的优先级和 QoS 选项。
+		},
+		stack.PacketOut, // stack.PacketOu 表示应该将数据包传递给链路层端点。
+		tcpip.PacketBuffer{
+			Header: hdr,                        // Header 保存出栈数据包的头，当一个数据包向下传递时，每层都会向 Header 添加新头部。
+			Data:   payload.ToVectorisedView(), // Data 存储着网络包的有效载荷。
+		},
+	); err != nil {
 		t.Fatalf("WritePacket failed: %v", err)
 	}
 }
@@ -291,7 +346,9 @@ func TestIPv4Receive(t *testing.T) {
 }
 
 func TestIPv4ReceiveControl(t *testing.T) {
+
 	const mtu = 0xbeef - header.IPv4MinimumSize
+
 	cases := []struct {
 		name           string
 		expectedCount  int
@@ -310,10 +367,12 @@ func TestIPv4ReceiveControl(t *testing.T) {
 		{"Non-zero fragment offset", 0, 100, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 0},
 		{"Zero-length packet", 0, 0, header.ICMPv4PortUnreachable, stack.ControlPortUnreachable, 0, 2*header.IPv4MinimumSize + header.ICMPv4MinimumSize + 8},
 	}
+
 	r, err := buildIPv4Route(localIpv4Addr, "\x0a\x00\x00\xbb")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			o := testObject{t: t}

@@ -58,6 +58,7 @@ type endpoint struct {
 }
 
 // NewEndpoint creates a new ipv4 endpoint.
+// NewEndpoint 创建一个新的 ipv4 端点。
 func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
 
 	e := &endpoint{
@@ -118,24 +119,27 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
-// writePacketFragments calls e.linkEP.WritePacket with each packet fragment to
-// write. It assumes that the IP header is entirely in pkt.Header but does not
-// assume that only the IP header is in pkt.Header. It assumes that the input
-// packet's stated length matches the length of the header+payload. mtu
-// includes the IP header and options. This does not support the DontFragment
-// IP flag.
+// writePacketFragments calls e.linkEP.WritePacket with each packet fragment to write.
+// It assumes that the IP header is entirely in pkt.Header but does not assume that only the IP header is in pkt.Header.
+// It assumes that the input packet's stated length matches the length of the header+payload.
+// mtu includes the IP header and options.
+// This does not support the DontFragment IP flag.
+//
+// writePacketFragments 调用 e.linkEP.WritePacket 处理每个要写入的数据包片段。
+// 它假设 IP 头完全在 pkt.Header 中，但不假设仅有 IP 头在 pkt.Header 中。
+// 它假设输入数据包的声明长度与 header+payload 的长度一致。
+// mtu 包括 IP 头和选项。
+// 这不支持 DontFragment IP 标志。
 func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int, pkt tcpip.PacketBuffer) *tcpip.Error {
 
 	// This packet is too big, it needs to be fragmented.
-
+	// 该数据包太大，需要进行分段。
 
 	ip := header.IPv4(pkt.Header.View())
 	flags := ip.Flags()
 
-
 	// innerMTU 即每一个分片能携带数据的最大值
 	// outerMTU 即每一个分片能携带数据和协议头的最大值
-
 
 	// 1. 计算分片数量
 
@@ -150,9 +154,13 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 	offset := ip.FragmentOffset()
 	originalAvailableLength := pkt.Header.AvailableLength()
 	for i := 0; i < n; i++ {
-		// Where possible, the first fragment that is sent has the same
-		// pkt.Header.UsedLength() as the input packet. The link-layer
-		// endpoint may depend on this for looking at, eg, L4 headers.
+
+		// Where possible, the first fragment that is sent has the same pkt.Header.UsedLength() as the input packet.
+		// The link-layer endpoint may depend on this for looking at, eg, L4 headers.
+		//
+		// 在可能的情况下，发送的第一个片段与输入数据包具有相同的 pkt.Header.UsedLength() 。
+		// 链路层端点可能会依赖这个来查看，例如，L4 报头。
+
 		h := ip
 		if i > 0 {
 			pkt.Header = buffer.NewPrependable(int(ip.HeaderLength()) + originalAvailableLength)
@@ -172,7 +180,6 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			h.SetFlagsFragmentOffset(flags, offset)
 		}
 
-
 		h.SetChecksum(0)
 		h.SetChecksum(^h.CalculateChecksum())
 		offset += uint16(innerMTU)
@@ -181,6 +188,8 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 		if i > 0 {
 			newPayload := pkt.Data.Clone(nil)
 			newPayload.CapLength(innerMTU)
+
+			//
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
 				Header:        pkt.Header,
 				Data:          newPayload,
@@ -188,20 +197,22 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			}); err != nil {
 				return err
 			}
+
 			r.Stats().IP.PacketsSent.Increment()
 			pkt.Data.TrimFront(newPayload.Size())
 			continue
 		}
 
-
-		// Special handling for the first fragment because it comes
-		// from the header.
+		// Special handling for the first fragment because it comes from the header.
+		// 对第一个片段的特殊处理，因为它来自标头。
 		if outerMTU >= pkt.Header.UsedLength() {
-			// This fragment can fit all of pkt.Header and possibly
-			// some of pkt.Data, too.
+
+			// This fragment can fit all of pkt.Header and possibly some of pkt.Data, too.
+			// 这个片段可以容纳所有的 pkt.Header ，也可能容纳部分的 pkt.Data 。
 			newPayload := pkt.Data.Clone(nil)
 			newPayloadLength := outerMTU - pkt.Header.UsedLength()
 			newPayload.CapLength(newPayloadLength)
+
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
 				Header:        pkt.Header,
 				Data:          newPayload,
@@ -209,13 +220,18 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			}); err != nil {
 				return err
 			}
+
 			r.Stats().IP.PacketsSent.Increment()
 			pkt.Data.TrimFront(newPayloadLength)
 		} else {
+
 			// The fragment is too small to fit all of pkt.Header.
+			// 该片段太小，无法容纳所有的 pkt.Header 。
 			startOfHdr := pkt.Header
 			startOfHdr.TrimBack(pkt.Header.UsedLength() - outerMTU)
 			emptyVV := buffer.NewVectorisedView(0, []buffer.View{})
+
+			//
 			if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, tcpip.PacketBuffer{
 				Header:        startOfHdr,
 				Data:          emptyVV,
@@ -223,40 +239,47 @@ func (e *endpoint) writePacketFragments(r *stack.Route, gso *stack.GSO, mtu int,
 			}); err != nil {
 				return err
 			}
+
 			r.Stats().IP.PacketsSent.Increment()
-			// Add the unused bytes of pkt.Header into the pkt.Data
-			// that remains to be sent.
+
+			// Add the unused bytes of pkt.Header into the pkt.Data that remains to be sent.
+			// 将 pkt.Header 未使用的字节添加到待发送的 pkt.Data 中。
 			restOfHdr := pkt.Header.View()[outerMTU:]
 			tmp := buffer.NewVectorisedView(len(restOfHdr), []buffer.View{buffer.NewViewFromBytes(restOfHdr)})
 			tmp.Append(pkt.Data)
 			pkt.Data = tmp
 		}
 	}
+
 	return nil
 }
 
 func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadSize int, params stack.NetworkHeaderParams) header.IPv4 {
 
-
+	// 构造 IPv4 头部
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
+	// 计算总长度
 	length := uint16(hdr.UsedLength() + payloadSize)
+	// 包序号，用于标识 IPv4 分片
 	id := uint32(0)
 	if length > header.IPv4MaximumHeaderSize+8 {
-		// Packets of 68 bytes or less are required by RFC 791 to not be
-		// fragmented, so we only assign ids to larger packets.
+		// Packets of 68 bytes or less are required by RFC 791 to not be fragmented,
+		// so we only assign ids to larger packets.
+		//
+		// RFC 791 要求 68 个字节或更少的数据包不被分段，因此我们仅将 ID 分配给较大的数据包。
 		id = atomic.AddUint32(&e.protocol.ids[hashRoute(r, params.Protocol, e.protocol.hashIV)%buckets], 1)
 	}
 
 	// IPv4 头部格式
 	ip.Encode(&header.IPv4Fields{
-		IHL:         header.IPv4MinimumSize,
+		IHL:         header.IPv4MinimumSize, // 互联网报头长度最少为 20B
 		TotalLength: length,
 		ID:          uint16(id),
 		TTL:         params.TTL,
 		TOS:         params.TOS,
 		Protocol:    uint8(params.Protocol),
-		SrcAddr:     r.LocalAddress,
-		DstAddr:     r.RemoteAddress,
+		SrcAddr:     r.LocalAddress,  // 本地地址
+		DstAddr:     r.RemoteAddress, // 远端地址
 	})
 
 	// 校验和
@@ -265,32 +288,66 @@ func (e *endpoint) addIPHeader(r *stack.Route, hdr *buffer.Prependable, payloadS
 }
 
 // WritePacket writes a packet to the given destination address and protocol.
-func (e *endpoint) WritePacket(r *stack.Route, gso *stack.GSO, params stack.NetworkHeaderParams, loop stack.PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error {
+//
+// WritePacket 根据目标地址和协议发送数据（到链路层）。
+//
+// 执行步骤:
+//	构造 IPv4 头部
+//  若需回环处理，直接在网络层转发回协议栈
+//  若需分段发送，则调用 `writePacketFragments()` 先分段、再发往链路层
+//  若无需分段发送，直接发往链路层
+//
+func (e *endpoint) WritePacket(
+	r *stack.Route, // 路由对象，包含了两个通信端点的地址信息等
+	gso *stack.GSO, // 通用分段处理
+	params stack.NetworkHeaderParams, // 网络层协议头参数，主要包括: 传输层协议号、TTL、TOS。
+	loop stack.PacketLooping, // 回环处理标识
+	pkt tcpip.PacketBuffer, // 网络层数据包
+) *tcpip.Error {
+
+	// 构造 IPv4 头部
 	ip := e.addIPHeader(r, &pkt.Header, pkt.Data.Size(), params)
 
-	// 判断该数据报的处理位置，如果是要在本地处理的话，就进行如下操作：
+	// stack.PacketLoop 表示回环数据包，无需发往链路层，直接在网络层转发回协议栈。
 	if loop&stack.PacketLoop != 0 {
+
+		// 构造网络层数据包：payload = Pkt.Header + Pkt.Data
 		views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
 		views[0] = pkt.Header.View()
 		views = append(views, pkt.Data.Views()...)
+
+		// 回环路由
 		loopedR := r.MakeLoopedRoute()
 
-		e.HandlePacket(&loopedR, tcpip.PacketBuffer{
-			Data:          buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-			NetworkHeader: buffer.View(ip),
-		})
+		// 直接转发给本网络层端点
+		e.HandlePacket(
+			&loopedR,
+			tcpip.PacketBuffer{
+				Data:          buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views), // Data 存储着网络包的有效载荷。
+				NetworkHeader: buffer.View(ip),                                                // NetworkHeader 存储着网络包头。
+			},
+		)
 
+		// 释放路由
 		loopedR.Release()
 	}
+
+	// stack.PacketOut 表示应该将数据包传递给链路层端点，如果未设置此位，则无需发往链路层。
 	if loop&stack.PacketOut == 0 {
 		return nil
 	}
+
+	// 如果 len(header+data) 超过 mtu 且链路层不支持 gso ，需要在网络层执行数据分段，调用 `writePacketFragments()` 发送数据包。
 	if pkt.Header.UsedLength()+pkt.Data.Size() > int(e.linkEP.MTU()) && (gso == nil || gso.Type == stack.GSONone) {
 		return e.writePacketFragments(r, gso, int(e.linkEP.MTU()), pkt)
 	}
+
+	// 如果无需分段，直接调用链路层端点进行发包
 	if err := e.linkEP.WritePacket(r, gso, ProtocolNumber, pkt); err != nil {
 		return err
 	}
+
+	// 统计发包数量
 	r.Stats().IP.PacketsSent.Increment()
 	return nil
 }
@@ -364,44 +421,67 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, loop stack.PacketLo
 	return e.linkEP.WritePacket(r, nil /* gso */, ProtocolNumber, pkt)
 }
 
-// HandlePacket is called by the link layer when new ipv4 packets arrive for
-// this endpoint.
+// HandlePacket is called by the link layer when new ipv4 packets arrive for this endpoint.
 //
+// 当新的 ipv4 网络层数据包到达此端点时，链路层将调用 HandlePacket() 来处理。
+//
+// 执行步骤:
+// 	解析 IPv4 头部和数据
+// 	检查和组装 IP 分段
+// 	从头部获取传输层协议号
+// 	将 pkt 发给传输层处理
 //
 func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 
+	// 取出 IPv4 Header
 	headerView := pkt.Data.First()
+	// 解析 IPv4 Header
 	h := header.IPv4(headerView)
+	// 合法性检查
 	if !h.IsValid(pkt.Data.Size()) {
 		r.Stats().IP.MalformedPacketsReceived.Increment()
 		return
 	}
+
+	// 设置 pkt 的网络层头部
 	pkt.NetworkHeader = headerView[:h.HeaderLength()]
 
-	hlen := int(h.HeaderLength())
-	tlen := int(h.TotalLength())
-	pkt.Data.TrimFront(hlen)
+	hlen := int(h.HeaderLength()) // 头部长度
+	tlen := int(h.TotalLength())  // 总长度
+	pkt.Data.TrimFront(hlen)      // 从 data 中移除头部
 	pkt.Data.CapLength(tlen - hlen)
 
+	// 是否有更多 IP 分段
 	more := (h.Flags() & header.IPv4FlagMoreFragments) != 0
+
+	// 检查和组装 IP 分段
 	if more || h.FragmentOffset() != 0 {
+
 		if pkt.Data.Size() == 0 {
-			// Drop the packet as it's marked as a fragment but has
-			// no payload.
+			// Drop the packet as it's marked as a fragment but has no payload.
+			// 丢弃数据包，因为它被标记为 IP 片段但没有有效负载。
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
 			return
 		}
+
 		// The packet is a fragment, let's try to reassemble it.
+		// 该数据包是一个片段，让我们尝试重新组装它。
+
+		// Drop the packet if the fragmentOffset is incorrect.
+		// i.e the combination of fragmentOffset and pkt.Data.size() causes
+		// a wrap around resulting in last being less than the offset.
+		//
+		// 如果 fragmentOffset 不正确，则丢弃该数据包。
+		// 比如 fragmentOffset 和 pkt.Data.size() 的组合会导致最后一个数据包小于偏移量。
 		last := h.FragmentOffset() + uint16(pkt.Data.Size()) - 1
-		// Drop the packet if the fragmentOffset is incorrect. i.e the
-		// combination of fragmentOffset and pkt.Data.size() causes a
-		// wrap around resulting in last being less than the offset.
 		if last < h.FragmentOffset() {
 			r.Stats().IP.MalformedPacketsReceived.Increment()
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
 			return
 		}
+
+		// xxx
 		var ready bool
 		var err error
 		pkt.Data, ready, err = e.fragmentation.Process(hash.IPv4FragmentHash(h), h.FragmentOffset(), last, more, pkt.Data)
@@ -410,16 +490,26 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 			r.Stats().IP.MalformedFragmentsReceived.Increment()
 			return
 		}
+
+		// 尚未收到完整 IPv4 报文，则 return 。
 		if !ready {
 			return
 		}
 	}
+
+	// 至此，收到完整的 IPv4 报文 ...
+
+	// 获取传输层协议号
 	p := h.TransportProtocol()
+
+	// 处理 ICMP 协议
 	if p == header.ICMPv4ProtocolNumber {
 		headerView.CapLength(hlen)
 		e.handleICMP(r, pkt)
 		return
 	}
+
+	// 处理其它传输层协议
 	r.Stats().IP.PacketsDelivered.Increment()
 	e.dispatcher.DeliverTransportPacket(r, p, pkt)
 }
@@ -431,9 +521,10 @@ type protocol struct {
 	ids    []uint32
 	hashIV uint32
 
-	// defaultTTL is the current default TTL for the protocol. Only the
-	// uint8 portion of it is meaningful and it must be accessed
-	// atomically.
+	// defaultTTL is the current default TTL for the protocol.
+	// Only the uint8 portion of it is meaningful and it must be accessed atomically.
+	//
+	// defaultTTL 是协议的当前默认 TTL ，只有后 8bit 是有意义的，须以原子方式访问。
 	defaultTTL uint32
 }
 
@@ -511,10 +602,13 @@ func hashRoute(r *stack.Route, protocol tcpip.TransportProtocolNumber, hashIV ui
 }
 
 // NewProtocol returns an IPv4 network protocol.
+// NewProtocol 返回一个 IPv4 网络协议。
 func NewProtocol() stack.NetworkProtocol {
+
 	ids := make([]uint32, buckets)
 
 	// Randomly initialize hashIV and the ids.
+	// 随机初始化 hashIV 和 ids 。
 	r := hash.RandN32(1 + buckets)
 	for i := range ids {
 		ids[i] = r[i]

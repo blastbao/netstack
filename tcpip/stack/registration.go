@@ -187,6 +187,7 @@ type TransportProtocol interface {
 // packets to the appropriate transport endpoint after it has been handled by
 // the network layer.
 type TransportDispatcher interface {
+
 	// DeliverTransportPacket delivers packets to the appropriate
 	// transport protocol endpoint.
 	//
@@ -265,7 +266,6 @@ type NetworkEndpoint interface {
 	// 它设置了 pkt.NetworkHeader，而 pkt.TransportHeader 必须已被设置。
 	WritePacket(r *Route, gso *GSO, params NetworkHeaderParams, loop PacketLooping, pkt tcpip.PacketBuffer) *tcpip.Error
 
-
 	// WritePackets writes packets to the given destination address and protocol.
 	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, params NetworkHeaderParams, loop PacketLooping) (int, *tcpip.Error)
 
@@ -320,7 +320,17 @@ type NetworkProtocol interface {
 	ParseAddresses(v buffer.View) (src, dst tcpip.Address)
 
 	// NewEndpoint creates a new endpoint of this protocol.
-	NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache LinkAddressCache, dispatcher TransportDispatcher, sender LinkEndpoint) (NetworkEndpoint, *tcpip.Error)
+	// NewEndpoint 创建该协议的新端点。
+	NewEndpoint(
+		nicID tcpip.NICID,
+		addrWithPrefix tcpip.AddressWithPrefix,
+		linkAddrCache LinkAddressCache,
+		dispatcher TransportDispatcher,
+		sender LinkEndpoint,
+	) (
+		NetworkEndpoint,
+		*tcpip.Error,
+	)
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -410,8 +420,7 @@ const (
 // before passing it up the stack.
 //
 //
-// LinkEndpoint 是由数据链路层协议（例如，以太网，环回，原始）实现的接口，
-// 被网络层协议用来发送数据包到关联的数据链路层。
+// LinkEndpoint 是由数据链路层协议（例如，以太网，环回，原始）实现的接口，被网络层协议用来发送数据包到关联的数据链路层。
 //
 // 当数据链接层报头存在时，在将数据传递到协议栈之前要设置每个 tcpip.PacketBuffer 的 LinkHeader 字段。
 //
@@ -465,6 +474,7 @@ type LinkEndpoint interface {
 	WritePacket(r *Route, gso *GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error
 
 
+
 	// WritePackets writes packets with the given protocol through the
 	// given route.
 	//
@@ -478,11 +488,13 @@ type LinkEndpoint interface {
 	WritePackets(r *Route, gso *GSO, hdrs []PacketDescriptor, payload buffer.VectorisedView, protocol tcpip.NetworkProtocolNumber) (int, *tcpip.Error)
 
 
+
 	// WriteRawPacket writes a packet directly to the link.
 	// The packet should already have an ethernet header.
 	//
 	// WriteRawPacket 直接向数据链路层写入一个数据包。该数据包已经添加以太网头。
 	WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error
+
 
 	// Attach attaches the data link layer endpoint to the network-layer
 	// dispatcher of the stack.
@@ -490,11 +502,13 @@ type LinkEndpoint interface {
 	// Attach 将数据链路层端点连接到协议栈的网络层调度器。
 	Attach(dispatcher NetworkDispatcher)
 
+
 	// IsAttached returns whether a NetworkDispatcher is attached to the
 	// endpoint.
 	//
 	// IsAttached 返回 NetworkDispatcher 是否连接到端点。
 	IsAttached() bool
+
 
 	// Wait waits for any worker goroutines owned by the endpoint to stop.
 	//
@@ -514,17 +528,19 @@ type LinkEndpoint interface {
 }
 
 
+
 // InjectableLinkEndpoint is a LinkEndpoint where inbound packets are
 // delivered via the Inject method.
 type InjectableLinkEndpoint interface {
 
 	LinkEndpoint
 
+
 	// InjectInbound injects an inbound packet.
 	InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer)
 
-	// InjectOutbound writes a fully formed outbound packet directly to the
-	// link.
+
+	// InjectOutbound writes a fully formed outbound packet directly to the link.
 	//
 	// dest is used by endpoints with multiple raw destinations.
 	InjectOutbound(dest tcpip.Address, packet []byte) *tcpip.Error
@@ -566,13 +582,19 @@ type LinkAddressResolver interface {
 }
 
 // A LinkAddressCache caches link addresses.
+// LinkAddressCache 会缓存链路层地址。
 type LinkAddressCache interface {
-	// CheckLocalAddress determines if the given local address exists, and if it
-	// does not exist.
+
+
+	// CheckLocalAddress determines if the given local address exists, and if it does not exist.
+	// 确定给定的本地地址是否存在。
 	CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID
 
+
 	// AddLinkAddress adds a link address to the cache.
+	// 在缓存中添加一个链接地址。
 	AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress)
+
 
 	// GetLinkAddress looks up the cache to translate address to link address (e.g. IP -> MAC).
 	// If the LinkEndpoint requests address resolution and there is a LinkAddressResolver
@@ -583,9 +605,25 @@ type LinkAddressCache interface {
 	// If address resolution is required, ErrNoLinkAddress and a notification channel is
 	// returned for the top level caller to block. Channel is closed once address resolution
 	// is complete (success or not).
-	GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address, protocol tcpip.NetworkProtocolNumber, w *sleep.Waker) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
+	//
+	//
+	// GetLinkAddress 查找缓存，以将地址翻译成链路地址（如 IP->MAC ）。
+	//
+	// 如果链路层端点 LinkEndpoint 请求地址解析，并且有一个 LinkAddressResolver 在网络协议中注册，
+	// 缓存会尝试解析地址并返回 ErrWouldBlock 。当地址解析完成时（成功或失败），Waker 会得到通知。
+	//
+	// 如果需要地址解析，则返回 ErrNoLinkAddress 和一个通知通道，供调用者阻塞式等待，在地址解析完成后（无论成功与否），通道即被关闭。
+	GetLinkAddress(
+		nicID tcpip.NICID,
+		addr, localAddr tcpip.Address,
+		protocol tcpip.NetworkProtocolNumber,
+		w *sleep.Waker,
+	) (tcpip.LinkAddress, <-chan struct{}, *tcpip.Error)
+
 
 	// RemoveWaker removes a waker that has been added in GetLinkAddress().
+	//
+	// 删除一个在 GetLinkAddress() 中添加的 waker 。
 	RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.Waker)
 }
 

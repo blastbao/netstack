@@ -119,7 +119,6 @@ const (
 )
 
 const (
-
 	// EthernetProtocolAll is a catch-all for all protocols carried inside
 	// an ethernet frame. It is mainly used to create packet sockets that
 	// capture all traffic.

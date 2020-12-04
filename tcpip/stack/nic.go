@@ -24,37 +24,38 @@ import (
 	"github.com/blastbao/netstack/tcpip/header"
 )
 
-
 // NIC represents a "network interface card" to which the networking stack is attached.
 //
 // NIC 代表网络协议栈所连接的网卡。
 type NIC struct {
 	// 协议栈
-	stack    *Stack
+	stack *Stack
 	// 网卡ID
-	id       tcpip.NICID
+	id tcpip.NICID
 	// 网卡名称
-	name     string
+	name string
 	//
 	linkEP   LinkEndpoint
 	loopback bool
 
-	mu            sync.RWMutex
+	mu sync.RWMutex
 
 	// ARP 欺骗
-	spoofing      bool
+	spoofing bool
 	// 混杂模式: 指网卡能够接收所有经过它的数据流，而不论其目的地址是否是它。
-	promiscuous   bool
+	promiscuous bool
 
 	//
-	primary       map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
+	primary map[tcpip.NetworkProtocolNumber][]*referencedNetworkEndpoint
 
 	// endpoints 中保存了与此 NIC 关联的所有地址 (primary and non-primary) 。
-	endpoints     map[NetworkEndpointID]*referencedNetworkEndpoint
+	endpoints map[NetworkEndpointID]*referencedNetworkEndpoint
 
 	//
 	addressRanges []tcpip.Subnet
-	mcastJoins    map[NetworkEndpointID]int32
+
+
+	mcastJoins map[NetworkEndpointID]int32
 
 
 	// packetEPs is protected by mu, but the contained PacketEndpoint values are not.
@@ -64,7 +65,10 @@ type NIC struct {
 	// 当本网卡收到该网络协议号上的数据包时，会回调各个监听端点提供的 HandlePacket() 来处理。
 	packetEPs map[tcpip.NetworkProtocolNumber][]PacketEndpoint
 
+
 	stats NICStats
+
+
 	// ndp is the NDP related state for NIC.
 	// Note, read and write operations on ndp require that the NIC is appropriately locked.
 	ndp ndpState
@@ -83,7 +87,7 @@ type DirectionStats struct {
 	// 包数
 	Packets *tcpip.StatCounter
 	// 字节数
-	Bytes   *tcpip.StatCounter
+	Bytes *tcpip.StatCounter
 }
 
 // PrimaryEndpointBehavior is an enumeration of an endpoint's primacy behavior.
@@ -116,8 +120,8 @@ const (
 )
 
 // newNIC returns a new NIC using the default NDP configurations from stack.
+// newNIC 使用协议栈中的默认 ND P配置创建新的 NIC 。
 func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback bool) *NIC {
-
 
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
@@ -125,14 +129,12 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 	//
 	// 例如，确保它提供的链路地址是一个有效的单播以太网地址。
 
-
 	// TODO(b/143357959): RFC 8200 section 5 requires that IPv6 endpoints
 	// observe an MTU of at least 1280 bytes. Ensure that this requirement
 	// of IPv6 is supported on this endpoint's LinkEndpoint.
 	//
 	// 遵守至少 1280 字节的 MTU 。
 	// 确保该端点的 LinkEndpoint 上支持 IPv6 的这一要求。
-
 
 	nic := &NIC{
 		stack:      stack,
@@ -161,8 +163,8 @@ func newNIC(stack *Stack, id tcpip.NICID, name string, ep LinkEndpoint, loopback
 			onLinkPrefixes: make(map[tcpip.Subnet]onLinkPrefixState),
 		},
 	}
-	nic.ndp.nic = nic
 
+	nic.ndp.nic = nic
 
 	// Register supported packet endpoint protocols.
 	for _, netProto := range header.Ethertypes {
@@ -192,12 +194,12 @@ func (n *NIC) enable() *tcpip.Error {
 
 		// 将新地址添加到网卡 n 中，这样便能接收发往该地址的数据包。
 		if err := n.AddAddress(
-			tcpip.ProtocolAddress{												// 协议地址
-				Protocol:          header.IPv4ProtocolNumber,					// IPv4 协议号，0x0800
+			tcpip.ProtocolAddress{ // 协议地址
+				Protocol: header.IPv4ProtocolNumber, // IPv4 协议号，0x0800
 				AddressWithPrefix: tcpip.AddressWithPrefix{
-										header.IPv4Broadcast,			// IPv4 广播地址，0xFF 0xFF 0xFF 0xFF
-										8 * header.IPv4AddressSize,	// IPv4 地址长度，以 bit 为单位
-									},
+								header.IPv4Broadcast,       // IPv4 广播地址，0xFF 0xFF 0xFF 0xFF
+								8 * header.IPv4AddressSize, // IPv4 地址长度，以 bit 为单位
+								   },
 			},
 			NeverPrimaryEndpoint,
 		); err != nil {
@@ -218,13 +220,10 @@ func (n *NIC) enable() *tcpip.Error {
 	// required to have IPv6 link-local unicast address, as per RFC 4291
 	// section 2.1.
 
-
-
 	_, ok := n.stack.networkProtocols[header.IPv6ProtocolNumber]
 	if !ok {
 		return nil
 	}
-
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -239,7 +238,6 @@ func (n *NIC) enable() *tcpip.Error {
 
 	l2addr := n.linkEP.LinkAddress()
 
-
 	// Only attempt to generate the link-local address if we have a valid MAC address.
 	//
 	// TODO(b/141011931): Validate a LinkEndpoint's link address (provided by LinkEndpoint.LinkAddress) before reaching this point.
@@ -250,6 +248,7 @@ func (n *NIC) enable() *tcpip.Error {
 		return nil
 	}
 
+	//
 	addr := header.LinkLocalAddr(l2addr)
 
 	//
@@ -313,9 +312,15 @@ func (n *NIC) primaryEndpoint(protocol tcpip.NetworkProtocolNumber) *referencedN
 	return nil
 }
 
+
+
+// 根据网络层协议号和目标地址，获取网络端点的引用
 func (n *NIC) getRef(protocol tcpip.NetworkProtocolNumber, dst tcpip.Address) *referencedNetworkEndpoint {
 	return n.getRefOrCreateTemp(protocol, dst, CanBePrimaryEndpoint, n.promiscuous)
 }
+
+
+
 
 // findEndpoint finds the endpoint, if any, with the given address.
 //
@@ -324,6 +329,9 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 	return n.getRefOrCreateTemp(protocol, address, peb, n.spoofing)
 }
 
+
+
+
 // getRefEpOrCreateTemp returns the referenced network endpoint for the given
 // protocol and address. If none exists a temporary one may be created if
 // we are in promiscuous mode or spoofing.
@@ -331,12 +339,11 @@ func (n *NIC) findEndpoint(protocol tcpip.NetworkProtocolNumber, address tcpip.A
 // getRefEpOrCreateTemp 返回给定协议和地址的引用网络端点。
 // 如果不存在，在我们处于混杂模式或欺骗的情况下，可能会创建一个临时的。
 func (n *NIC) getRefOrCreateTemp(
-	protocol tcpip.NetworkProtocolNumber,	// 网络层协议号
-	address tcpip.Address,					// 地址
-	peb PrimaryEndpointBehavior,			//
-	spoofingOrPromiscuous bool,				// 地址欺诈 or 地址混杂
+	protocol tcpip.NetworkProtocolNumber, // 网络层协议号
+	address tcpip.Address, // 地址
+	peb PrimaryEndpointBehavior, //
+	spoofingOrPromiscuous bool, // 地址欺诈 or 地址混杂
 ) *referencedNetworkEndpoint {
-
 
 	// 网络层协议端点的标识符
 	id := NetworkEndpointID{address}
@@ -346,10 +353,8 @@ func (n *NIC) getRefOrCreateTemp(
 	// 根据 id 获取网络层端点。
 	if ref, ok := n.endpoints[id]; ok {
 
-
 		// An endpoint with this id exists, check if it can be used and return it.
 		// 存在一个具有这个 id 的端点，检查是否可以使用并返回。
-
 
 		switch ref.getKind() {
 		case permanentExpired:
@@ -366,11 +371,7 @@ func (n *NIC) getRefOrCreateTemp(
 			}
 		}
 
-
 	}
-
-
-
 
 	// A usable reference was not found, create a temporary one if requested by
 	// the caller or if the address is found in the NIC's subnets.
@@ -390,7 +391,6 @@ func (n *NIC) getRefOrCreateTemp(
 				continue
 			}
 
-
 			// For now just skip the broadcast address, until we support it.
 			// FIXME(b/137608825): Add support for sending/receiving directed (subnet) broadcast.
 			//
@@ -399,12 +399,11 @@ func (n *NIC) getRefOrCreateTemp(
 				continue
 			}
 
-			//
+			// 如果 address 同子网 sn 匹配，则 break 。
 			if sn.Contains(address) {
 				createTempEP = true
 				break
 			}
-
 
 		}
 	}
@@ -425,14 +424,12 @@ func (n *NIC) getRefOrCreateTemp(
 	n.mu.Lock()
 	if ref, ok := n.endpoints[id]; ok {
 
-
 		// No need to check the type as we are ok with expired endpoints at this point.
 		// 不需要检查类型，因为现在可以接受过期的端点。
 		if ref.tryIncRef() {
 			n.mu.Unlock()
 			return ref
 		}
-
 
 		// tryIncRef failing means the endpoint is scheduled to be removed once the
 		// lock is released. Remove it here so we can create a new (temporary) one.
@@ -454,14 +451,13 @@ func (n *NIC) getRefOrCreateTemp(
 		return nil
 	}
 
-
 	//
 	ref, _ := n.addAddressLocked(
 		// 网络层地址
 		tcpip.ProtocolAddress{
-			Protocol: protocol,							// 网络层协议号
+			Protocol: protocol, // 网络层协议号
 			AddressWithPrefix: tcpip.AddressWithPrefix{ // 网络层前缀地址
-				Address:   address,						// 地址
+				Address:   address,                     // 地址
 				PrefixLen: netProto.DefaultPrefixLen(), // 前缀长度
 			},
 		},
@@ -475,15 +471,11 @@ func (n *NIC) getRefOrCreateTemp(
 	return ref
 }
 
-
-
 func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) (*referencedNetworkEndpoint, *tcpip.Error) {
 
 	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
 
-
 	if ref, ok := n.endpoints[id]; ok {
-
 
 		switch ref.getKind() {
 		case permanentTentative, permanent:
@@ -495,7 +487,7 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 			// Promote the endpoint to become permanent and respect the new peb.
 			if ref.tryIncRef() {
 
-				// 
+				//
 				ref.setKind(permanent)
 
 				refs := n.primary[ref.protocol]
@@ -525,11 +517,6 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 			// lock is released. Remove it here so we can create a new (permanent) one.
 			//
 			// The removal logic waiting for the lock handles this case.
-
-
-
-
-
 			n.removeEndpointLocked(ref)
 		}
 	}
@@ -537,13 +524,11 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 	return n.addAddressLocked(protocolAddress, peb, permanent)
 }
 
-
-
 //
 func (n *NIC) addAddressLocked(
-	protocolAddress tcpip.ProtocolAddress,  // 网络层协议 + 地址
-	peb PrimaryEndpointBehavior,			//
-	kind networkEndpointKind,				//
+	protocolAddress tcpip.ProtocolAddress, // 网络层协议 + 地址
+	peb PrimaryEndpointBehavior, //
+	kind networkEndpointKind, //
 ) (*referencedNetworkEndpoint, *tcpip.Error) {
 
 	// TODO(b/141022673): Validate IP address before adding them.
@@ -554,20 +539,17 @@ func (n *NIC) addAddressLocked(
 		protocolAddress.AddressWithPrefix.Address,
 	}
 
-
 	// 检查 Endpoint 是否已存在，若已存在，则报错。
 	if _, ok := n.endpoints[id]; ok {
 		// Endpoint already exists.
 		return nil, tcpip.ErrDuplicateAddress
 	}
 
-
 	// 检查网络层协议号是否被协议栈支持，如果支持，则取出协议对象
 	netProto, ok := n.stack.networkProtocols[protocolAddress.Protocol]
 	if !ok {
 		return nil, tcpip.ErrUnknownProtocol
 	}
-
 
 	// Create the new network endpoint.
 	// 用 netProto 创建新的网络层端点 ep 。
@@ -576,12 +558,10 @@ func (n *NIC) addAddressLocked(
 		return nil, err
 	}
 
-
 	// 是否为 IPv6 单播
 	isIPv6Unicast :=
-		protocolAddress.Protocol== header.IPv6ProtocolNumber &&
-		header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
-
+		protocolAddress.Protocol == header.IPv6ProtocolNumber &&
+			header.IsV6UnicastAddress(protocolAddress.AddressWithPrefix.Address)
 
 	// If the address is an IPv6 address and it is a permanent address, mark it as tentative so it goes through the DAD process.
 	//
@@ -590,19 +570,14 @@ func (n *NIC) addAddressLocked(
 		kind = permanentTentative
 	}
 
-
-
-
 	// 构造端点 ep 的引用对象
 	ref := &referencedNetworkEndpoint{
-		refs:     1,						// refs 为本端点的引用计数，当 refs 为 0 时，会触发将本端点从关联 NIC 中移除。初始值为 1 。
-		ep:       ep,						// 新创建的网络层端点。
-		nic:      n,						// 关联网卡。
-		protocol: protocolAddress.Protocol,	// 关联的网络层协议。
-		kind:     kind,						//
+		refs:     1,                        // refs 为本端点的引用计数，当 refs 为 0 时，会触发将本端点从关联 NIC 中移除。初始值为 1 。
+		ep:       ep,                       // 新创建的网络层端点。
+		nic:      n,                        // 关联网卡。
+		protocol: protocolAddress.Protocol, // 关联的网络层协议。
+		kind:     kind,                     //
 	}
-
-
 
 	// Set up cache if link address resolution exists for this protocol.
 	// 如果该协议存在链路层地址解析，则设置 ARP 缓存。
@@ -621,10 +596,8 @@ func (n *NIC) addAddressLocked(
 		}
 	}
 
-
 	//
 	n.endpoints[id] = ref
-
 
 	n.insertPrimaryEndpointLocked(ref, peb)
 
@@ -663,7 +636,6 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 	// 返回地址集合
 	addrs := make([]tcpip.ProtocolAddress, 0, len(n.endpoints))
 
-
 	//
 	for nid, ref := range n.endpoints {
 
@@ -681,10 +653,10 @@ func (n *NIC) AllAddresses() []tcpip.ProtocolAddress {
 		addrs = append(addrs,
 			// addr = [协议号 + 地址 + 掩码]
 			tcpip.ProtocolAddress{
-				Protocol: ref.protocol,							// 网络层协议号
-				AddressWithPrefix: tcpip.AddressWithPrefix{		// 带前缀的地址
-					Address:   nid.LocalAddress,				// 本地地址
-					PrefixLen: ref.ep.PrefixLen(),				// 前缀长度(子网掩码)
+				Protocol: ref.protocol, // 网络层协议号
+				AddressWithPrefix: tcpip.AddressWithPrefix{ // 带前缀的地址
+					Address:   nid.LocalAddress,   // 本地地址
+					PrefixLen: ref.ep.PrefixLen(), // 前缀长度(子网掩码)
 				},
 			},
 		)
@@ -765,9 +737,6 @@ func (n *NIC) AddressRanges() []tcpip.Subnet {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
 
-
-
-
 	sns := make([]tcpip.Subnet, 0, len(n.addressRanges)+len(n.endpoints))
 
 	//
@@ -784,10 +753,8 @@ func (n *NIC) AddressRanges() []tcpip.Subnet {
 
 	}
 
-
 	return append(sns, n.addressRanges...)
 }
-
 
 // insertPrimaryEndpointLocked adds r to n's primary endpoint list as required by peb.
 //
@@ -802,7 +769,6 @@ func (n *NIC) insertPrimaryEndpointLocked(r *referencedNetworkEndpoint, peb Prim
 }
 
 func (n *NIC) removeEndpointLocked(r *referencedNetworkEndpoint) {
-
 
 	id := *r.ep.ID()
 
@@ -934,7 +900,6 @@ func (n *NIC) joinGroupLocked(protocol tcpip.NetworkProtocolNumber, addr tcpip.A
 
 	}
 
-
 	n.mcastJoins[id] = joins + 1
 	return nil
 }
@@ -968,22 +933,23 @@ func (n *NIC) leaveGroupLocked(addr tcpip.Address) *tcpip.Error {
 }
 
 func handlePacket(
-	protocol tcpip.NetworkProtocolNumber,
-	dst, src tcpip.Address,
-	localLinkAddr, remotelinkAddr tcpip.LinkAddress,
-	ref *referencedNetworkEndpoint,
-	pkt tcpip.PacketBuffer,
+	protocol tcpip.NetworkProtocolNumber,				// 网络层协议号
+	dst, src tcpip.Address,								// 源地址，目的地址
+	localLinkAddr, remotelinkAddr tcpip.LinkAddress,	// 源 mac 地址，目的 mac 地址
+	ref *referencedNetworkEndpoint,						// 网络层端点的引用
+	pkt tcpip.PacketBuffer,								// 数据包
 ) {
 
+	// 构造路由
 	r := makeRoute(protocol, dst, src, localLinkAddr, ref, false /* handleLocal */, false /* multicastLoop */)
+	// 设置目的 Mac 地址
 	r.RemoteLinkAddress = remotelinkAddr
+	// 根据路由将数据包交给上层业务处理，HandlePacket 在上层协议中定义，如 tcp、udp、icmp 都有自己的定义。
 	ref.ep.HandlePacket(&r, pkt)
+	// 解除路由引用
 	ref.decRef()
 
 }
-
-
-
 
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
 // hands the packet over for further processing. This function is called when
@@ -994,14 +960,13 @@ func handlePacket(
 // the ownership of the items is not retained by the caller.
 //
 //
-// DeliverNetworkPacket 找到合适的网络协议端点，并将数据包移交给它。
-// 当网卡收到来自物理接口的数据包时，就会调用这个函数。
+// 当网卡收到来自物理接口的数据包时，会调用此函数，让与 NIC 关联的网络层 ep 能接收并处理包。
 //
 func (n *NIC) DeliverNetworkPacket(
-	linkEP LinkEndpoint,					// 数据链路层端点
-	remote, local tcpip.LinkAddress,		// mac 地址
-	protocol tcpip.NetworkProtocolNumber,	// 网络层协议号
-	pkt tcpip.PacketBuffer,					// 数据包
+	linkEP LinkEndpoint, 					// 数据链路层端点
+	remote, local tcpip.LinkAddress, 		// mac 地址
+	protocol tcpip.NetworkProtocolNumber, 	// 网络层协议号
+	pkt tcpip.PacketBuffer,				 	// 数据包
 ) {
 
 	// 接收 包/字节 数目统计
@@ -1022,9 +987,8 @@ func (n *NIC) DeliverNetworkPacket(
 	}
 
 	// Are any packet sockets listening for this network protocol?
-	// 是否有数据包套接字监听这个网络协议？
+	// 是否有套接字监听这个网络协议？
 	n.mu.RLock()
-
 
 	// 取出监听本网卡上网络协议号 protocol 的所有端点，后面会逐个回调各端点的 HandlePacket() 来处理数据包。
 	packetEPs := n.packetEPs[protocol]
@@ -1033,8 +997,7 @@ func (n *NIC) DeliverNetworkPacket(
 	// If we received a packet with protocol EthernetProtocolAll, then the
 	// previous for loop will have handled it.
 	//
-	// 如果有某些端点，正在监听所有网络层协议，
-	// 它会注册在 n.packetEPs[header.EthernetProtocolAll] 中，也需要回调这些节点。
+	// 如果有某些端点，正在监听所有网络层协议，它会注册在 n.packetEPs[header.EthernetProtocolAll] 中，也需要回调这些节点。
 	if protocol != header.EthernetProtocolAll {
 		packetEPs = append(packetEPs, n.packetEPs[header.EthernetProtocolAll]...)
 	}
@@ -1046,7 +1009,7 @@ func (n *NIC) DeliverNetworkPacket(
 		ep.HandlePacket(n.id, local, protocol, pkt.Clone())
 	}
 
-	// 如果网络层协议是 IP(IPv4/IPv6)， 更新统计信息。
+	// 如果网络层协议是 IP(IPv4/IPv6)，更新统计信息。
 	if netProto.Number() == header.IPv4ProtocolNumber || netProto.Number() == header.IPv6ProtocolNumber {
 		n.stack.stats.IP.PacketsReceived.Increment()
 	}
@@ -1057,35 +1020,26 @@ func (n *NIC) DeliverNetworkPacket(
 		return
 	}
 
-	// 获取数据包头中的源地址和目的地址。
+	// 获取源地址和目的地址。
 	src, dst := netProto.ParseAddresses(pkt.Data.First())
 
-
-
-	//
+	// [重要] 根据 dst ip 获取关联的 referencedNetworkEndpoint ，并调用其 HandlePacket 来处理包。
 	if ref := n.getRef(protocol, dst); ref != nil {
-		//
 		handlePacket(protocol, dst, src, linkEP.LinkAddress(), remote, ref, pkt)
 		return
 	}
 
 
-	// This NIC doesn't care about the packet. Find a NIC that cares about the
-	// packet and forward it to the NIC.
-	//
+	// This NIC doesn't care about the packet. Find a NIC that cares about the packet and forward it to the NIC.
 	// 此网卡不关心当前数据包，找到一个关心当前数据包的网卡，并将其转发给该网卡。
-	//
+
 	// TODO: Should we be forwarding the packet even if promiscuous?
 	// TODO：即使是混杂模式也要转发吗？
-
 
 	// 启用了 NIC 之间的数据包转发，才执行转发。
 	if n.stack.Forwarding() {
 
-
-		// 网卡 ID 填 0
-		// 本地地址为空
-		//
+		// 参数列表：网卡 ID 填 0，本地地址为空，目标地址为 dst，目标协议号 protocol ，非多播。
 		r, err := n.stack.FindRoute(0, "", dst, protocol, false /* multicastLoop */)
 		if err != nil {
 			n.stack.stats.IP.InvalidAddressesReceived.Increment()
@@ -1093,11 +1047,8 @@ func (n *NIC) DeliverNetworkPacket(
 		}
 		defer r.Release()
 
-
-
-		r.LocalLinkAddress = n.linkEP.LinkAddress() 	// 本地 MAC 地址
-		r.RemoteLinkAddress = remote 					// 目的 MAC 地址
-
+		r.LocalLinkAddress = n.linkEP.LinkAddress() // 本地 MAC 地址
+		r.RemoteLinkAddress = remote                // 目的 MAC 地址
 
 		// Found a NIC.
 		n := r.ref.nic
@@ -1117,7 +1068,6 @@ func (n *NIC) DeliverNetworkPacket(
 			ref.decRef()
 		} else {
 
-
 			// n doesn't have a destination endpoint.
 			// n 没有目的端点。
 
@@ -1130,11 +1080,14 @@ func (n *NIC) DeliverNetworkPacket(
 
 			// TODO(b/128629022): use route.WritePacket.
 
-			//
+			// 通过给定的路由 r 写入指定协议 protocol 的数据包 pkt 。
 			if err := n.linkEP.WritePacket(&r, nil /* gso */, protocol, pkt); err != nil {
+				// 发包错误数统计
 				r.Stats().IP.OutgoingPacketErrors.Increment()
 			} else {
+				// 发包数统计
 				n.stats.Tx.Packets.Increment()
+				// 发包字节数统计
 				n.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 			}
 
@@ -1148,6 +1101,7 @@ func (n *NIC) DeliverNetworkPacket(
 
 
 	// If a packet socket handled the packet, don't treat it as invalid.
+	//
 	// 如果一个数据包套接字处理了这个数据包，不要将其视为无效。
 	if len(packetEPs) == 0 {
 		n.stack.stats.IP.InvalidAddressesReceived.Increment()
@@ -1158,74 +1112,95 @@ func (n *NIC) DeliverNetworkPacket(
 }
 
 // DeliverTransportPacket delivers the packets to the appropriate transport protocol endpoint.
+//
+// DeliverTransportPacket 将数据包传送到相应的传输层端点。
 func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer) {
 
+	// 根据传输层协议号获取关联的协议
 	state, ok := n.stack.transportProtocols[protocol]
 	if !ok {
 		n.stack.stats.UnknownProtocolRcvdPackets.Increment()
 		return
 	}
 
+	// 获取传输层协议对象
 	transProto := state.proto
 
-	// Raw socket packets are delivered based solely on the transport
-	// protocol number. We do not inspect the payload to ensure it's
-	// validly formed.
+	// Raw socket packets are delivered based solely on the transport protocol number.
+	// We do not inspect the payload to ensure it's validly formed.
+	//
+	// 原始套接字数据包仅根据传输协议号进行传输，不会检查其载荷。
+
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
+	// 检查包大小
 	if len(pkt.Data.First()) < transProto.MinimumPacketSize() {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
+	// 获取源端口、目的端口
 	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
 	if err != nil {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 		return
 	}
 
+	// 构造传输层四元组
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
 	if n.stack.demux.deliverPacket(r, protocol, pkt, id) {
 		return
 	}
 
 	// Try to deliver to per-stack default handler.
+	// 尝试向协议栈的默认处理程序递送数据包。
 	if state.defaultHandler != nil {
 		if state.defaultHandler(r, id, pkt) {
 			return
 		}
 	}
 
-	// We could not find an appropriate destination for this packet, so
-	// deliver it to the global handler.
+	// We could not find an appropriate destination for this packet, so deliver it to the global handler.
+	// 我们无法为这个数据包找到合适的目的地，所以将其交付给全局处理程序。
 	if !transProto.HandleUnknownDestinationPacket(r, id, pkt) {
 		n.stack.stats.MalformedRcvdPackets.Increment()
 	}
+
 }
 
-// DeliverTransportControlPacket delivers control packets to the appropriate
-// transport protocol endpoint.
+// DeliverTransportControlPacket delivers control packets to the appropriate transport protocol endpoint.
+//
+// DeliverTransportControlPacket 将控制数据包传送到相应的传输层端点。
 func (n *NIC) DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt tcpip.PacketBuffer) {
+
+	// 根据传输层协议号获取关联的协议
 	state, ok := n.stack.transportProtocols[trans]
 	if !ok {
 		return
 	}
 
+	// 获取传输层协议对象
 	transProto := state.proto
 
 	// ICMPv4 only guarantees that 8 bytes of the transport protocol will
 	// be present in the payload. We know that the ports are within the
 	// first 8 bytes for all known transport protocols.
+	//
+	// ICMPv4 仅保证将传输层协议的前 8 个字节存储在其载荷中，而所有传输层协议的端口信息都保存在前 8 字节。
 	if len(pkt.Data.First()) < 8 {
 		return
 	}
 
+	// 获取源端口、目的端口
 	srcPort, dstPort, err := transProto.ParsePorts(pkt.Data.First())
 	if err != nil {
 		return
 	}
 
+	// 构造传输层四元组
 	id := TransportEndpointID{srcPort, local, dstPort, remote}
+
+	// 递送控制包
 	if n.stack.demux.deliverControlPacket(n, net, trans, typ, extra, pkt, id) {
 		return
 	}
@@ -1297,7 +1272,6 @@ func (n *NIC) handleNDPRA(ip tcpip.Address, ra header.NDPRouterAdvert) {
 	n.ndp.handleRA(ip, ra)
 }
 
-
 //
 type networkEndpointKind int32
 
@@ -1323,7 +1297,6 @@ const (
 	// 如果过程中检测到重复的地址，则会被删除。
 	permanentTentative networkEndpointKind = iota
 
-
 	// A permanent endpoint is created by adding a permanent address (vs. a
 	// temporary one) to the NIC. Its reference count is biased by 1 to avoid
 	// removal when no route holds a reference to it. It is removed by explicitly
@@ -1333,7 +1306,6 @@ const (
 	// 通过向 NIC 添加永久地址(相对于临时地址)创建永久端点。
 	// 它的引用数会偏向于1，以避免在没有路由指向它时被删除。
 	// 通过明确地从 NIC 中删除永久地址来删除它。
-	//
 	permanent
 
 	// An expired permanent endoint is a permanent endoint that had its address
@@ -1341,6 +1313,7 @@ const (
 	// hold a reference to it. This is achieved by decreasing its reference count
 	// by 1. If its address is re-added before the endpoint is removed, its type
 	// changes back to permanent and its reference count increases by 1 again.
+	//
 	//
 	// 过期的永久端点是指其地址已从 NIC 中删除的永久端点，一旦没有更多的路由持有对它的引用，它就会等待被删除。
 	// 如果在端点被删除之前，它的地址被重新添加，它的类型就会变回永久，并且其引用计数将再次增加1。
@@ -1354,11 +1327,12 @@ const (
 	// it. A temporary endpoint can be promoted to permanent if its address
 	// is added permanently.
 	//
+	//
 	// 临时端点用来发送欺诈数据包，或者在混杂模式下接收入栈数据包，当没有更多的路由持有对它的引用时，端点会立即被删除。
 	// 如果临时端点的地址被永久添加，则可以将其晋升为永久端点。
 	temporary
-
 )
+
 
 // 把 ep 注册到 n.packetEPs[netProto] 中。
 func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) *tcpip.Error {
@@ -1376,10 +1350,12 @@ func (n *NIC) registerPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep Pa
 func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep PacketEndpoint) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+
 	eps, ok := n.packetEPs[netProto]
 	if !ok {
 		return
 	}
+
 	for i, epOther := range eps {
 		if epOther == ep {
 			n.packetEPs[netProto] = append(eps[:i], eps[i+1:]...)
@@ -1388,11 +1364,11 @@ func (n *NIC) unregisterPacketEndpoint(netProto tcpip.NetworkProtocolNumber, ep 
 	}
 }
 
-// 引用的网络端点。
+// 网络层端点的引用，附加了 ARP 缓存、引用计数、类型 等功能。
 type referencedNetworkEndpoint struct {
-	ep       NetworkEndpoint 				// 网络层端点
-	nic      *NIC							// 关联的网卡
-	protocol tcpip.NetworkProtocolNumber	// 网络层协议号
+	ep       NetworkEndpoint             // 网络层端点
+	nic      *NIC                        // 关联的网卡
+	protocol tcpip.NetworkProtocolNumber // 网络层协议号
 
 	// linkCache is set if link address resolution is enabled for this protocol.
 	// Set to nil otherwise.
@@ -1440,7 +1416,6 @@ func (r *referencedNetworkEndpoint) isValidForIncoming() bool {
 	return r.getKind() != permanentExpired || r.nic.promiscuous
 }
 
-
 // decRef decrements the ref count and cleans up the endpoint once it reaches zero.
 //
 // decRef 会递减 r.refs 计数，一旦达到零，就会对端点进行清理。
@@ -1480,7 +1455,6 @@ func (r *referencedNetworkEndpoint) incRef() {
 // 也就是说：如果端点还活着，它将递增计数，如果它已经被清理，则不做任何事情。
 func (r *referencedNetworkEndpoint) tryIncRef() bool {
 	for {
-
 		// 取引用计数，若为 0 则代表已被释放，返回 false 。
 		v := atomic.LoadInt32(&r.refs)
 		if v == 0 {

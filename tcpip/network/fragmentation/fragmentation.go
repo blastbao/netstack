@@ -83,6 +83,8 @@ func NewFragmentation(highMemoryLimit, lowMemoryLimit int, reassemblingTimeout t
 
 // Process processes an incoming fragment belonging to an ID
 // and returns a complete packet when all the packets belonging to that ID have been received.
+//
+// 当接收到属于 id 的所有数据包时，Process 处理属于该 id 的片段，并返回完整的数据包。
 func (f *Fragmentation) Process(id uint32, first, last uint16, more bool, vv buffer.VectorisedView) (buffer.VectorisedView, bool, error) {
 	f.mu.Lock()
 	r, ok := f.reassemblers[id]

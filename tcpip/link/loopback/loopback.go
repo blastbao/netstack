@@ -31,42 +31,59 @@ type endpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-// New creates a new loopback endpoint. This link-layer endpoint just turns
-// outbound packets into inbound packets.
+// New creates a new loopback endpoint.
+// This link-layer endpoint just turns outbound packets into inbound packets.
+//
+// New 创建一个新的回环端点，该端点把出站数据包变成入站数据包。
 func New() stack.LinkEndpoint {
 	return &endpoint{}
 }
 
-// Attach implements stack.LinkEndpoint.Attach. It just saves the stack network-
-// layer dispatcher for later use when packets need to be dispatched.
+// Attach implements stack.LinkEndpoint.Attach.
+// It just saves the stack network-layer dispatcher for later use when packets need to be dispatched.
+//
+// Attach 实现 stack.LinkEndpoint.Attach 。
+// 它只是将协议栈网络层调度器保存下来，以便以后需要分发数据包时使用。
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
+//
+// IsAttached 实现 stack.LinkEndpoint.IsAttached 。
 func (e *endpoint) IsAttached() bool {
 	return e.dispatcher != nil
 }
 
-// MTU implements stack.LinkEndpoint.MTU. It returns a constant that matches the
-// linux loopback interface.
+// MTU implements stack.LinkEndpoint.MTU.
+// It returns a constant that matches the linux loopback interface.
+//
+// 它返回一个与 linux loopback 接口匹配的常量。
 func (*endpoint) MTU() uint32 {
 	return 65536
 }
 
-// Capabilities implements stack.LinkEndpoint.Capabilities. Loopback advertises
-// itself as supporting checksum offload, but in reality it's just omitted.
+// Capabilities implements stack.LinkEndpoint.Capabilities.
+// Loopback advertises itself as supporting checksum offload, but in reality it's just omitted.
+//
 func (*endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return stack.CapabilityRXChecksumOffload | stack.CapabilityTXChecksumOffload | stack.CapabilitySaveRestore | stack.CapabilityLoopback
+	return stack.CapabilityRXChecksumOffload |
+		   stack.CapabilityTXChecksumOffload |
+		   stack.CapabilitySaveRestore |
+		   stack.CapabilityLoopback
 }
 
-// MaxHeaderLength implements stack.LinkEndpoint.MaxHeaderLength. Given that the
-// loopback interface doesn't have a header, it just returns 0.
+// MaxHeaderLength implements stack.LinkEndpoint.MaxHeaderLength.
+// Given that the loopback interface doesn't have a header, it just returns 0.
+//
+// 鉴于 loopback 接口没有报头，返回 0 。
 func (*endpoint) MaxHeaderLength() uint16 {
 	return 0
 }
 
 // LinkAddress returns the link address of this endpoint.
+//
+// 返回本端点的 MAC 地址。
 func (*endpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
 }
@@ -74,19 +91,38 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}
 
-// WritePacket implements stack.LinkEndpoint.WritePacket. It delivers outbound
-// packets to the network-layer dispatcher.
-func (e *endpoint) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
-	views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
-	views[0] = pkt.Header.View()
-	views = append(views, pkt.Data.Views()...)
+// WritePacket implements stack.LinkEndpoint.WritePacket.
+// It delivers outbound packets to the network-layer dispatcher.
+//
+// 将出站数据包传递到网络层调度程序。
+func (e *endpoint) WritePacket(
+	_ *stack.Route,
+	_ *stack.GSO,
+	protocol tcpip.NetworkProtocolNumber,
+	pkt tcpip.PacketBuffer,
+) *tcpip.Error {
 
-	// Because we're immediately turning around and writing the packet back
-	// to the rx path, we intentionally don't preserve the remote and local
-	// link addresses from the stack.Route we're passed.
-	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, protocol, tcpip.PacketBuffer{
-		Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
-	})
+	// 构造 Pkg 数据包
+	views := make([]buffer.View, 1, 1+len(pkt.Data.Views()))
+	views[0] = pkt.Header.View()	// 设置 Header
+	views = append(views, pkt.Data.Views()...) // 设置 Payload
+
+
+	// Because we're immediately turning around and writing the packet back to the rx path,
+	// we intentionally don't preserve the remote and local link addresses from the stack.Route we're passed.
+	//
+	//
+	// 因为我们会立即转过来并将数据包写回到rx路径，所以我们故意不保留堆栈中的远程和本地 Mac 地址。
+
+	e.dispatcher.DeliverNetworkPacket(
+		e,
+		"" /* remote */,
+		"" /* local */,
+		protocol,
+		tcpip.PacketBuffer{
+			Data: buffer.NewVectorisedView(len(views[0])+pkt.Data.Size(), views),
+		},
+	)
 
 	return nil
 }
@@ -98,14 +134,19 @@ func (e *endpoint) WritePackets(_ *stack.Route, _ *stack.GSO, hdrs []stack.Packe
 
 // WriteRawPacket implements stack.LinkEndpoint.WriteRawPacket.
 func (e *endpoint) WriteRawPacket(vv buffer.VectorisedView) *tcpip.Error {
+
 	// Reject the packet if it's shorter than an ethernet header.
+	// 如果数据包比以太网帧头短，则拒绝它。
 	if vv.Size() < header.EthernetMinimumSize {
 		return tcpip.ErrBadAddress
 	}
 
 	// There should be an ethernet header at the beginning of vv.
+	// vv 包含以太网帧头，去除该头。
 	linkHeader := header.Ethernet(vv.First()[:header.EthernetMinimumSize])
 	vv.TrimFront(len(linkHeader))
+
+	// 分发数据包
 	e.dispatcher.DeliverNetworkPacket(e, "" /* remote */, "" /* local */, linkHeader.Type(), tcpip.PacketBuffer{
 		Data:       vv,
 		LinkHeader: buffer.View(linkHeader),

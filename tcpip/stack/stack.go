@@ -385,9 +385,11 @@ type Stack struct {
 	forwarding       bool
 	cleanupEndpoints map[TransportEndpoint]struct{}
 
-	// route is the route table passed in by the user via SetRouteTable(),
-	// it is used by FindRoute() to build a route for a specific
-	// destination.
+
+	// routeTable is the route table passed in by the user via SetRouteTable(),
+	// it is used by FindRoute() to build a route for a specific destination.
+	//
+	// routeTable 是通过 SetRouteTable() 设置的路由表，FindRoute() 使用它来为特定目标地址创建路由。
 	routeTable []tcpip.Route
 
 	*ports.PortManager
@@ -524,6 +526,10 @@ type TransportEndpointInfo struct {
 // marker interface.
 func (*TransportEndpointInfo) IsEndpointInfo() {}
 
+
+
+
+
 // New allocates a new networking stack with only the requested networking and
 // transport protocols configured with default options.
 //
@@ -534,6 +540,13 @@ func (*TransportEndpointInfo) IsEndpointInfo() {}
 // SetNetworkProtocolOption/SetTransportProtocolOption methods provided by the
 // stack. Please refer to individual protocol implementations as to what options
 // are supported.
+//
+//
+// New 构造一个新的网络协议栈。
+//
+// 可以通过调用堆栈提供的 SetNetworkProtocolOption/SetTransportProtocolOption 方法来更改协议选项。
+//
+// 请参阅各个协议的实现，以了解支持哪些选项。
 func New(opts Options) *Stack {
 
 	// 定时器
@@ -572,25 +585,19 @@ func New(opts Options) *Stack {
 	}
 
 	// Add specified network protocols.
-	// 根据 opt 选项，初始化 stack 所能支持的网络层协议。
+	// 添加网络层协议
 	for _, netProto := range opts.NetworkProtocols {
 		s.networkProtocols[netProto.Number()] = netProto
-
-
 		// ???
 		if r, ok := netProto.(LinkAddressResolver); ok {
 			s.linkAddrResolvers[r.LinkAddressProtocol()] = r
 		}
-
-
 	}
 
 	// Add specified transport protocols.
-	// 初始化传输层协议
+	// 添加传输层协议
 	for _, transProto := range opts.TransportProtocols {
-		s.transportProtocols[transProto.Number()] = &transportProtocolState{
-			proto: transProto,
-		}
+		s.transportProtocols[transProto.Number()] = &transportProtocolState{proto: transProto}
 	}
 
 	// Add the factory for raw endpoints, if present.
@@ -765,18 +772,25 @@ func (s *Stack) NewPacketEndpoint(cooked bool, netProto tcpip.NetworkProtocolNum
 
 
 // createNIC creates a NIC with the provided id and link-layer endpoint, and optionally enable it.
+// createNIC 使用提供的 ID 和链路层端点创建 NIC ，并可以选择启用它。
 func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled, loopback bool) *tcpip.Error {
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Make sure id is unique.
+	// 确保 id 唯一性
 	if _, ok := s.nics[id]; ok {
 		return tcpip.ErrDuplicateNICID
 	}
 
+	// 创建 NIC
 	n := newNIC(s, id, name, ep, loopback)
 
+	// 保存 NIC
 	s.nics[id] = n
+
+	// 启动 NIC
 	if enabled {
 		return n.enable()
 	}
@@ -785,37 +799,45 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled,
 }
 
 // CreateNIC creates a NIC with the provided id and link-layer endpoint.
+// CreateNIC 使用所提供的网卡 id 和链路层端点 ep 创建 NIC 。
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
+
+
+
 	return s.createNIC(id, "", ep, true, false)
 }
 
-// CreateNamedNIC creates a NIC with the provided id and link-layer endpoint,
-// and a human-readable name.
+// CreateNamedNIC creates a NIC with the provided id and link-layer endpoint, and a human-readable name.
+// CreateNamedNIC 使用提供的网卡 id 和链路层端点 ep 以及易于理解的名称创建 NIC 。
 func (s *Stack) CreateNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
 	return s.createNIC(id, name, ep, true, false)
 }
 
-// CreateNamedLoopbackNIC creates a NIC with the provided id and link-layer
-// endpoint, and a human-readable name.
+// CreateNamedLoopbackNIC creates a NIC with the provided id and link-layer endpoint, and a human-readable name.
+// CreateNamedLoopbackNIC 使用提供的网卡 id 和链路层端点 ep 以及易于理解的名称创建 NIC 。
 func (s *Stack) CreateNamedLoopbackNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
 	return s.createNIC(id, name, ep, true, true)
 }
 
-// CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint,
-// but leave it disable. Stack.EnableNIC must be called before the link-layer
-// endpoint starts delivering packets to it.
+// CreateDisabledNIC creates a NIC with the provided id and link-layer endpoint, but leave it disable.
+// Stack.EnableNIC must be called before the link-layer endpoint starts delivering packets to it.
+//
+// CreateDisabledNIC 使用提供的 ID 和链路层端点 ep 创建 NIC ，但将其禁用。
+// 在链路层端点开始向其传递数据包之前，必须先调用 Stack.EnableNIC 。
 func (s *Stack) CreateDisabledNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
 	return s.createNIC(id, "", ep, false, false)
 }
 
-// CreateDisabledNamedNIC is a combination of CreateNamedNIC and
-// CreateDisabledNIC.
+// CreateDisabledNamedNIC is a combination of CreateNamedNIC and CreateDisabledNIC.
+//
+// CreateDisabledNamedNIC 是 CreateNamedNIC 和 CreateDisabledNIC 的组合。
 func (s *Stack) CreateDisabledNamedNIC(id tcpip.NICID, name string, ep LinkEndpoint) *tcpip.Error {
 	return s.createNIC(id, name, ep, false, false)
 }
 
-// EnableNIC enables the given NIC so that the link-layer endpoint can start
-// delivering packets to it.
+// EnableNIC enables the given NIC so that the link-layer endpoint can start delivering packets to it.
+//
+// EnableNIC 启用给定的 NIC ，以便链路层端点可以开始向其传递数据包。
 func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -829,6 +851,7 @@ func (s *Stack) EnableNIC(id tcpip.NICID) *tcpip.Error {
 }
 
 // CheckNIC checks if a NIC is usable.
+// CheckNIC 检查 NIC 是否可用。
 func (s *Stack) CheckNIC(id tcpip.NICID) bool {
 	s.mu.RLock()
 	nic, ok := s.nics[id]
@@ -872,6 +895,8 @@ type NICInfo struct {
 }
 
 // NICInfo returns a map of NICIDs to their associated information.
+//
+// NICInfo 返回 NICIDs 与其相关信息的 Map 。
 func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -917,53 +942,68 @@ type NICStateFlags struct {
 	Loopback bool
 }
 
+
 // AddAddress adds a new network-layer address to the specified NIC.
+// AddAddress 将新的网络层地址添加到指定的 NIC 。
 func (s *Stack) AddAddress(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) *tcpip.Error {
 	return s.AddAddressWithOptions(id, protocol, addr, CanBePrimaryEndpoint)
 }
+
 
 // AddProtocolAddress adds a new network-layer protocol address to the specified NIC.
 func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress) *tcpip.Error {
 	return s.AddProtocolAddressWithOptions(id, protocolAddress, CanBePrimaryEndpoint)
 }
 
+
 // AddAddressWithOptions is the same as AddAddress, but allows you to specify
 // whether the new endpoint can be primary or not.
+//
+// AddAddressWithOptions 与 AddAddress 相同，但是允许您指定新端点是否可以是主要端点。
 func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) *tcpip.Error {
 
-
+	// 是否支持该网络协议
 	netProto, ok := s.networkProtocols[protocol]
 	if !ok {
 		return tcpip.ErrUnknownProtocol
 	}
 
-	return s.AddProtocolAddressWithOptions(id, tcpip.ProtocolAddress{
-		Protocol: protocol,
-		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   addr,
-			PrefixLen: netProto.DefaultPrefixLen(),
+	//
+	return s.AddProtocolAddressWithOptions(
+		id,
+		tcpip.ProtocolAddress{
+			Protocol: protocol,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   addr,
+				PrefixLen: netProto.DefaultPrefixLen(),
+			},
 		},
-	}, peb)
+		peb,
+	)
 }
 
-// AddProtocolAddressWithOptions is the same as AddProtocolAddress, but allows
-// you to specify whether the new endpoint can be primary or not.
+// AddProtocolAddressWithOptions is the same as AddProtocolAddress,
+// but allows you to specify whether the new endpoint can be primary or not.
+//
+// AddProtocolAddressWithOptions 与 AddProtocolAddress 相同，但是允许您指定新端点是否可以是主要端点。
+//
 func (s *Stack) AddProtocolAddressWithOptions(id tcpip.NICID, protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// 根据 id 取得 NIC
 	nic := s.nics[id]
 	if nic == nil {
 		return tcpip.ErrUnknownNICID
 	}
 
+	// 把 addr 添加到 NIC ，指定是否为 primary 端点
 	return nic.AddAddress(protocolAddress, peb)
 }
 
 // AddAddressRange adds a range of addresses to the specified NIC. The range is
 // given by a subnet address, and all addresses contained in the subnet are
-// used except for the subnet address itself and the subnet's broadcast
-// address.
+// used except for the subnet address itself and the subnet's broadcast address.
 func (s *Stack) AddAddressRange(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, subnet tcpip.Subnet) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -989,8 +1029,7 @@ func (s *Stack) RemoveAddressRange(id tcpip.NICID, subnet tcpip.Subnet) *tcpip.E
 	return tcpip.ErrUnknownNICID
 }
 
-// RemoveAddress removes an existing network-layer address from the specified
-// NIC.
+// RemoveAddress removes an existing network-layer address from the specified NIC.
 func (s *Stack) RemoveAddress(id tcpip.NICID, addr tcpip.Address) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1047,6 +1086,7 @@ func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.Netwo
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
+
 // FindRoute creates a route to the given destination address,
 // leaving through the given nic and local address (if provided).
 //
@@ -1065,18 +1105,19 @@ func (s *Stack) FindRoute(
 	isBroadcast := remoteAddr == header.IPv4Broadcast
 	isMulticast := header.IsV4MulticastAddress(remoteAddr) || header.IsV6MulticastAddress(remoteAddr)
 
+	// 是否需要路由: 非广播、非多播、非 IPv6 回环地址
 	needRoute := !(isBroadcast || isMulticast || header.IsV6LinkLocalAddress(remoteAddr))
 
 	// 如果指定了网卡 ID 且不需路由解析（广播、多播、回环地址），则 ...
 	if id != 0 && !needRoute {
 
-		// 根据网卡 ID 取出网卡信息
+		// 根据网卡 ID 取出 nic
 		if nic, ok := s.nics[id]; ok {
 
-			// 根据 网卡、本地 IP 地址、网络协议号来获取关联的 RefNetworkEndpoint
+			// 根据 nic、本地 IP、网络协议号来获取关联的 refNetworkEndpoint
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 
-				//
+				// ???
 				return makeRoute(
 					netProto,							// 网络层协议号
 					ref.ep.ID().LocalAddress,			// 本地 IP 地址
@@ -1103,6 +1144,7 @@ func (s *Stack) FindRoute(
 
 				// 根据 网卡、本地 IP 地址、网络协议号来获取关联的 RefNetworkEndpoint
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
+
 
 					// 如果没有设置 remoteAddr ，则将其设置为本地 mac 地址。
 					if len(remoteAddr) == 0 {
@@ -1140,8 +1182,7 @@ func (s *Stack) FindRoute(
 	return Route{}, tcpip.ErrNoRoute
 }
 
-// CheckNetworkProtocol checks if a given network protocol is enabled in the
-// stack.
+// CheckNetworkProtocol checks if a given network protocol is enabled in the stack.
 func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool {
 	_, ok := s.networkProtocols[protocol]
 	return ok
@@ -1152,7 +1193,7 @@ func (s *Stack) CheckNetworkProtocol(protocol tcpip.NetworkProtocolNumber) bool 
 // does not exist.
 //
 //
-// CheckLocalAddress 确定给定的本地地址是否存在，如果存在，则返回它所绑定的 NIC 的 id 。如果地址不存在，则返回 0 。
+// 确定给定的本地地址是否存在，如果存在，则返回它所绑定的 NIC 的 id 。如果地址不存在，则返回 0 。
 func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.NICID {
 
 	s.mu.RLock()
@@ -1198,7 +1239,7 @@ func (s *Stack) CheckLocalAddress(nicID tcpip.NICID, protocol tcpip.NetworkProto
 
 // SetPromiscuousMode enables or disables promiscuous mode in the given NIC.
 //
-// SetPromiscuousMode 启用或禁用指定 NIC 上的混杂模式。
+// 启用或禁用指定 NIC 上的混杂模式。
 func (s *Stack) SetPromiscuousMode(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1215,7 +1256,7 @@ func (s *Stack) SetPromiscuousMode(nicID tcpip.NICID, enable bool) *tcpip.Error 
 // SetSpoofing enables or disables address spoofing in the given NIC, allowing
 // endpoints to bind to any address in the NIC.
 //
-// SetSpoofing 启用或禁用指定 NIC 上的地址欺诈，允许端点绑定到 NIC 中的任何地址。
+// 启用或禁用指定 NIC 上的地址欺诈，允许端点绑定到 NIC 中的任何地址。
 func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1230,6 +1271,7 @@ func (s *Stack) SetSpoofing(nicID tcpip.NICID, enable bool) *tcpip.Error {
 }
 
 // AddLinkAddress adds a link address to the stack link cache.
+// AddLinkAddress 将 Mac 地址添加到协议栈的 ARP 缓存。
 func (s *Stack) AddLinkAddress(nicID tcpip.NICID, addr tcpip.Address, linkAddr tcpip.LinkAddress) {
 	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
 	s.linkAddrCache.add(fullAddr, linkAddr)
@@ -1303,8 +1345,10 @@ func (s *Stack) UnregisterTransportEndpoint(
 	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
-// StartTransportEndpointCleanup removes the endpoint with the given id from
-// the stack transport dispatcher. It also transitions it to the cleanup stage.
+// StartTransportEndpointCleanup removes the endpoint with the given id from the stack transport dispatcher.
+// It also transitions it to the cleanup stage.
+//
+// 从堆栈传输调度器中删除给定id的端点。
 func (s *Stack) StartTransportEndpointCleanup(
 	nicID tcpip.NICID,
 	netProtos []tcpip.NetworkProtocolNumber,
@@ -1321,16 +1365,15 @@ func (s *Stack) StartTransportEndpointCleanup(
 	s.demux.unregisterEndpoint(netProtos, protocol, id, ep, bindToDevice)
 }
 
-// CompleteTransportEndpointCleanup removes the endpoint from the cleanup
-// stage.
+// CompleteTransportEndpointCleanup removes the endpoint from the cleanup stage.
 func (s *Stack) CompleteTransportEndpointCleanup(ep TransportEndpoint) {
 	s.mu.Lock()
 	delete(s.cleanupEndpoints, ep)
 	s.mu.Unlock()
 }
 
-// FindTransportEndpoint finds an endpoint that most closely matches the provided
-// id. If no endpoint is found it returns nil.
+// FindTransportEndpoint finds an endpoint that most closely matches the provided id.
+// If no endpoint is found it returns nil.
 func (s *Stack) FindTransportEndpoint(
 	netProto tcpip.NetworkProtocolNumber,
 	transProto tcpip.TransportProtocolNumber,

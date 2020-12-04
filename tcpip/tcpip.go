@@ -200,10 +200,14 @@ func (s Subnet) String() string {
 
 // Contains returns true iff the address is of the same length and matches the
 // subnet address and mask.
+//
+// 如果地址长度相同且匹配子网地址和掩码，则返回 true 。
 func (s *Subnet) Contains(a Address) bool {
+
 	if len(a) != len(s.address) {
 		return false
 	}
+
 	for i := 0; i < len(a); i++ {
 		if a[i]&s.mask[i] != s.address[i] {
 			return false
@@ -735,18 +739,24 @@ type IPv6TrafficClassOption uint8
 
 
 
-// Route is a row in the routing table. It specifies through which NIC (and
-// gateway) sets of packets should be routed. A row is considered viable if the
-// masked target address matches the destination address in the row.
+// Route is a row in the routing table.
+//
+// It specifies through which NIC (and gateway) sets of packets should be routed.
+// A row is considered viable if the masked target address matches the destination address in the row.
+//
+// 路由表项指定应通过哪些网卡、网关对数据包进行路由。
+//
 type Route struct {
-
 	// Destination must contain the target address for this row to be viable.
+	// 目标子网掩码
 	Destination Subnet
 
 	// Gateway is the gateway to be used if this row is viable.
+	// 网关地址
 	Gateway Address
 
 	// NIC is the id of the nic to be used if this row is viable.
+	// 网卡 ID
 	NIC NICID
 
 }

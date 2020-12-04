@@ -34,8 +34,6 @@ import (
 //  本地网络层端点
 //  回环处理标识
 //
-//
-//
 type Route struct {
 
 	// RemoteAddress is the final destination of the route.
@@ -75,7 +73,7 @@ type Route struct {
 // makeRoute initializes a new route.
 // It takes ownership of the provided reference to a network endpoint.
 //
-// makeRoute 初始化一个新的路由，它对所提供的网络端点引用 ref 拥有所有权。
+// makeRoute 初始化一个新的路由，它对所提供的网络层端点的引用 ref 拥有所有权。
 func makeRoute(
 	netProto tcpip.NetworkProtocolNumber,	// 网络层协议号
 	localAddr, remoteAddr tcpip.Address,	// 本地 ip 地址、远端 ip 地址
@@ -95,13 +93,12 @@ func makeRoute(
 		loop |= PacketLoop
 	}
 
-	//
 	return Route{
 		NetProto:         netProto,			// 网络协议
 		LocalAddress:     localAddr,		// 本地 ip 地址
 		LocalLinkAddress: localLinkAddr,	// 本地 mac 地址
 		RemoteAddress:    remoteAddr,		// 远端 ip 地址
-		ref:              ref,				// 本地端点
+		ref:              ref,				// 本地网络层端点，负责接收和处理包
 		Loop:             loop,				// 回环
 	}
 }
@@ -151,9 +148,6 @@ func (r *Route) GSOMaxSize() uint32 {
 	return 0
 }
 
-
-
-
 // Resolve attempts to resolve the link address if necessary. Returns ErrWouldBlock in
 // case address resolution requires blocking, e.g. wait for ARP reply. Waker is
 // notified when address resolution is complete (success or not).
@@ -196,7 +190,6 @@ func (r *Route) Resolve(waker *sleep.Waker) (<-chan struct{}, *tcpip.Error) {
 		}
 		nextAddr = r.RemoteAddress
 	}
-
 
 	// 执行链路层地址解析（如 ARP 解析）
 	linkAddr, ch, err := r.ref.linkCache.GetLinkAddress(r.ref.nic.ID(), nextAddr, r.LocalAddress, r.NetProto, waker)
@@ -363,7 +356,16 @@ func (r *Route) Clone() Route {
 // address coming in. This is different to unicast routes where local and
 // remote addresses remain the same as they identify location (local vs remote)
 // not direction (source vs destination).
+//
+// MakeLoopedRoute 复制给定的路由，并对用于发送组播/广播数据包的路由进行特殊处理。
+//
+// 在这些情况下，多播/广播 地址在发送出去的时候是远程地址，但对于传入（looped）的数据包，它就变成了本地地址。
+// 同理，出去的时候是本地接口地址，进来的时候就变成了远程地址。
+//
+// 这与单播路由不同，本地地址和远程地址保持不变，因为它们标识的是位置（本地与远程）而不是方向（源与目的）。
+//
 func (r *Route) MakeLoopedRoute() Route {
+
 	l := r.Clone()
 
 	// 如果目标地址是广播、多播地址，则把目标 MAC 地址置为本地 MAC 地址。
@@ -371,8 +373,10 @@ func (r *Route) MakeLoopedRoute() Route {
 		header.IsV4MulticastAddress(r.RemoteAddress) ||
 		header.IsV6MulticastAddress(r.RemoteAddress) {
 
-		// swap(l.RemoteAddress, l.LocalAddress)
+		// 把源 IP 地址置为本地 IP 地址，本地 IP 地址置为源 IP 地址。 swap(l.RemoteAddress, l.LocalAddress)
 		l.RemoteAddress, l.LocalAddress = l.LocalAddress, l.RemoteAddress
+
+		// 把源 Mac 地址置为本地 MAC 地址。
 		l.RemoteLinkAddress = l.LocalLinkAddress
 	}
 	return l
