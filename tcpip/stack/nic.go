@@ -471,25 +471,45 @@ func (n *NIC) getRefOrCreateTemp(
 	return ref
 }
 
+
+//
+//
+//
+//
+//
+//
 func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) (*referencedNetworkEndpoint, *tcpip.Error) {
 
+	// 本地 IP 地址
 	id := NetworkEndpointID{protocolAddress.AddressWithPrefix.Address}
 
+	// 检查网卡 n 上是否存在与指定 IP 地址关联的网络层端点引用 ref 。
+
+
+	// (1) 若已经存在关联的 ref ，则
 	if ref, ok := n.endpoints[id]; ok {
 
+		// 检查端点类型
 		switch ref.getKind() {
+
+		// 如果是持久端点，则报错
 		case permanentTentative, permanent:
+
 			// The NIC already have a permanent endpoint with that address.
 			// 网卡已经有了一个 `permanent` 的端点地址。
+
 			return nil, tcpip.ErrDuplicateAddress
+
+		// 如果是过期端点，
 		case permanentExpired, temporary:
 
 			// Promote the endpoint to become permanent and respect the new peb.
 			if ref.tryIncRef() {
 
-				//
+				// 设置状态为永久
 				ref.setKind(permanent)
 
+				//
 				refs := n.primary[ref.protocol]
 				for i, r := range refs {
 					if r == ref {
@@ -513,16 +533,26 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 				return ref, nil
 			}
 
-			// tryIncRef failing means the endpoint is scheduled to be removed once the
-			// lock is released. Remove it here so we can create a new (permanent) one.
+
+			// tryIncRef failing means the endpoint is scheduled to be removed once the lock is released.
+			//
+			// Remove it here so we can create a new (permanent) one.
 			//
 			// The removal logic waiting for the lock handles this case.
+			//
+			//
+			// tryIncRef 失败意味着释放锁定后计划删除端点
+
+
 			n.removeEndpointLocked(ref)
 		}
 	}
 
+	// (2) 若不存在关联的 ref ，则需要创建端点，并关联到指定地址，这样后续来包会发往该 ep 。
 	return n.addAddressLocked(protocolAddress, peb, permanent)
 }
+
+
 
 //
 func (n *NIC) addAddressLocked(
@@ -614,7 +644,7 @@ func (n *NIC) addAddressLocked(
 // AddAddress adds a new address to n, so that it starts accepting packets
 // targeted at the given address (and network protocol).
 //
-// AddAddress 将一个新的地址添加到 n *NIC 中，这样它就开始接受针对给定地址（和网络协议）的数据包。
+// AddAddress 将一个新的地址添加到 n *NIC 中，这样就可以接受发往给定网络协议和地址的数据包。
 //
 func (n *NIC) AddAddress(protocolAddress tcpip.ProtocolAddress, peb PrimaryEndpointBehavior) *tcpip.Error {
 	// Add the endpoint.

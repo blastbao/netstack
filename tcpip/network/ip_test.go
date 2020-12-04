@@ -194,7 +194,7 @@ func (t *testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
 
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 
-	// 初始化网络协议栈
+	// 创建协议栈
 	s := stack.New(stack.Options{
 		// 支持的网络层协议：IPv4
 		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
@@ -205,7 +205,7 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	// 创建网卡
 	s.CreateNIC(1, loopback.New())
 
-	// 添加地址
+	// 将本地 IPv4 网络地址 local 添加到 NIC-1 中，这样网卡就可以接收发往 IPv4/local 的网络层数据包，并投递给关联端点。
 	s.AddAddress(1, ipv4.ProtocolNumber, local)
 
 	// 设置路由表

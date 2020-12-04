@@ -39,7 +39,6 @@ const linkAddrCacheSize = 512 // max cache entries
 
 
 
-
 // linkAddrCache is a fixed-sized cache mapping IP addresses to link addresses.
 // The entries are stored in a ring buffer, oldest entry replaced first.
 // This struct is safe for concurrent use.

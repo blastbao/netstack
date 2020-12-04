@@ -27,6 +27,7 @@ import (
 //
 // NetworkEndpointID 是网络层协议端点的标识符。
 type NetworkEndpointID struct {
+	// 本地 IP 地址
 	LocalAddress tcpip.Address
 }
 
@@ -241,6 +242,9 @@ type NetworkHeaderParams struct {
 // of network layer protocols (e.g., ipv4, ipv6).
 //
 // NetworkEndpoint 是网络层协议（如ipv4、ipv6）端点需要实现的接口。
+//
+// 入栈数据包 => HandlePacket()
+// 出栈数据包 => WritePacket() / WritePackets()
 type NetworkEndpoint interface {
 
 	// DefaultTTL is the default time-to-live value (or hop limit, in ipv6) for this endpoint.

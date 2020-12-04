@@ -320,6 +320,7 @@ func (r *Route) WriteHeaderIncludedPacket(pkt tcpip.PacketBuffer) *tcpip.Error {
 }
 
 // DefaultTTL returns the default TTL of the underlying network endpoint.
+// DefaultTTL 返回底层网络层端点的默认 TTL 。
 func (r *Route) DefaultTTL() uint8 {
 	return r.ref.ep.DefaultTTL()
 }
