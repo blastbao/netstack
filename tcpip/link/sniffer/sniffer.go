@@ -113,24 +113,43 @@ func NewWithFile(lower stack.LinkEndpoint, file *os.File, snapLen uint32) (stack
 	}, nil
 }
 
-// DeliverNetworkPacket implements the stack.NetworkDispatcher interface. It is
-// called by the link-layer endpoint being wrapped when a packet arrives, and
-// logs the packet before forwarding to the actual dispatcher.
-func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+
+// DeliverNetworkPacket implements the stack.NetworkDispatcher interface.
+// It is called by the link-layer endpoint being wrapped when a packet arrives,
+// and logs the packet before forwarding to the actual dispatcher.
+//
+// DeliverNetworkPacket 实现 stack.NetworkDispatcher 接口。
+func (e *endpoint) DeliverNetworkPacket(
+	linkEP stack.LinkEndpoint,
+	remote, local tcpip.LinkAddress,
+	protocol tcpip.NetworkProtocolNumber,
+	pkt tcpip.PacketBuffer,
+) {
+
+	// 若开启日志，但未设置日志文件，则输出到标准输出
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("recv", protocol, pkt.Data.First(), nil)
 	}
+
+	// 如果已设置日志文件且开启 Packets 落盘
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
+
+		// 取出 pkt
 		vs := pkt.Data.Views()
+
+		// 大包截断
 		length := pkt.Data.Size()
 		if length > int(e.maxPCAPLen) {
 			length = int(e.maxPCAPLen)
 		}
 
+		// 构造 pcap 头部，写入到 buf 中
 		buf := bytes.NewBuffer(make([]byte, 0, pcapPacketHeaderLen+length))
 		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
+
+		// 把 pkt 数据追加写入到 buf 中
 		for _, v := range vs {
 			if length == 0 {
 				break
@@ -143,10 +162,14 @@ func (e *endpoint) DeliverNetworkPacket(linkEP stack.LinkEndpoint, remote, local
 			}
 			length -= len(v)
 		}
+
+		// 保存到日志文件 e.file 中
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
 	}
+
+	// 将 pkt 递交到网络层。
 	e.dispatcher.DeliverNetworkPacket(e, remote, local, protocol, pkt)
 }
 
@@ -194,10 +217,14 @@ func (e *endpoint) GSOMaxSize() uint32 {
 }
 
 func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) {
+
+
 	if atomic.LoadUint32(&LogPackets) == 1 && e.file == nil {
 		logPacket("send", protocol, pkt.Header.View(), gso)
 	}
+
 	if e.file != nil && atomic.LoadUint32(&LogPacketsToFile) == 1 {
+
 		hdrBuf := pkt.Header.View()
 		length := len(hdrBuf) + pkt.Data.Size()
 		if length > int(e.maxPCAPLen) {
@@ -208,17 +235,22 @@ func (e *endpoint) dumpPacket(gso *stack.GSO, protocol tcpip.NetworkProtocolNumb
 		if err := binary.Write(buf, binary.BigEndian, newPCAPPacketHeader(uint32(length), uint32(len(hdrBuf)+pkt.Data.Size()))); err != nil {
 			panic(err)
 		}
+
 		if len(hdrBuf) > length {
 			hdrBuf = hdrBuf[:length]
 		}
+
 		if _, err := buf.Write(hdrBuf); err != nil {
 			panic(err)
 		}
+
 		length -= len(hdrBuf)
 		logVectorisedView(pkt.Data, length, buf)
+
 		if _, err := e.file.Write(buf.Bytes()); err != nil {
 			panic(err)
 		}
+
 	}
 }
 

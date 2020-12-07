@@ -205,7 +205,7 @@ func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 	// 创建网卡
 	s.CreateNIC(1, loopback.New())
 
-	// 将本地 IPv4 网络地址 local 添加到 NIC-1 中，这样网卡就可以接收发往 IPv4/local 的网络层数据包，并投递给关联端点。
+	// 将本地 IPv4 网络地址 local 添加到 NIC-1 中，这样网卡 NIC-1 就可以接收发往 IPv4/local 的网络层数据包，并投递给关联 ep 。
 	s.AddAddress(1, ipv4.ProtocolNumber, local)
 
 	// 设置路由表
@@ -277,7 +277,7 @@ func TestIPv4Send(t *testing.T) {
 	o.dstAddr = remoteIpv4Addr
 	o.contents = payload
 
-	// 查找路由
+	// 构造路由
 	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)

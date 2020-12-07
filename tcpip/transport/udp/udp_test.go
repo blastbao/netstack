@@ -274,28 +274,37 @@ type testContext struct {
 func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 	t.Helper()
 
+	// 初始化协议栈
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocol{ipv4.NewProtocol(), ipv6.NewProtocol()},
 		TransportProtocols: []stack.TransportProtocol{udp.NewProtocol()},
 	})
+
+	// 创建 link ep
 	ep := channel.New(256, mtu, "")
 	wep := stack.LinkEndpoint(ep)
 
+	// 是否需要开启 sniffer ，打印详细报文数据
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
+
+	// 创建网卡
 	if err := s.CreateNIC(1, wep); err != nil {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
+	// 绑定本地 IPv4 地址到网卡
 	if err := s.AddAddress(1, ipv4.ProtocolNumber, stackAddr); err != nil {
 		t.Fatalf("AddAddress failed: %v", err)
 	}
 
+	// 绑定本地 IPv6 地址到网卡
 	if err := s.AddAddress(1, ipv6.ProtocolNumber, stackV6Addr); err != nil {
 		t.Fatalf("AddAddress failed: %v", err)
 	}
 
+	// 初始化路由表
 	s.SetRouteTable([]tcpip.Route{
 		{
 			Destination: header.IPv4EmptySubnet,
@@ -306,6 +315,7 @@ func newDualTestContext(t *testing.T, mtu uint32) *testContext {
 			NIC:         1,
 		},
 	})
+
 
 	return &testContext{
 		t:      t,

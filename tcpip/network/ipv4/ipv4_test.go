@@ -177,9 +177,10 @@ type errorChannel struct {
 	packetCollectorErrors []*tcpip.Error
 }
 
-// newErrorChannel creates a new errorChannel endpoint. Each call to WritePacket
-// will return successive errors from packetCollectorErrors until the list is
-// empty and then return nil each time.
+// newErrorChannel creates a new errorChannel endpoint.
+//
+// Each call to WritePacket will return successive errors
+// from packetCollectorErrors until the list is empty and then return nil each time.
 func newErrorChannel(size int, mtu uint32, linkAddr tcpip.LinkAddress, packetCollectorErrors []*tcpip.Error) *errorChannel {
 	return &errorChannel{
 		Endpoint:              channel.New(size, mtu, linkAddr),
@@ -203,6 +204,7 @@ func (e *errorChannel) Drain() int {
 
 // WritePacket stores outbound packets into the channel.
 func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt tcpip.PacketBuffer) *tcpip.Error {
+
 	select {
 	case e.Ch <- pkt:
 	default:
@@ -216,23 +218,38 @@ func (e *errorChannel) WritePacket(r *stack.Route, gso *stack.GSO, protocol tcpi
 	return nextError
 }
 
+//
 type context struct {
 	stack.Route
 	linkEP *errorChannel
 }
 
 func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32) context {
+
 	// Make the packet and write it.
+
+	// 创建协议栈，支持 IPv4 网络层协议
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
 	})
+
+
+	// 创建链路层 ep
 	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, "", packetCollectorErrors)
+
+	// 创建网卡
 	s.CreateNIC(1, ep)
+
+	// 源/目的 IP
 	const (
 		src = "\x10\x00\x00\x01"
 		dst = "\x10\x00\x00\x02"
 	)
+
+	// 把源地址注册到网卡，以接收对应数据包
 	s.AddAddress(1, ipv4.ProtocolNumber, src)
+
+	// 初始化路由表
 	{
 		subnet, err := tcpip.NewSubnet(dst, tcpip.AddressMask(header.IPv4Broadcast))
 		if err != nil {
@@ -243,10 +260,14 @@ func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32
 			NIC:         1,
 		}})
 	}
+
+	// 创建通往给定目标地址的路由对象
 	r, err := s.FindRoute(0, src, dst, ipv4.ProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		t.Fatalf("s.FindRoute got %v, want %v", err, nil)
 	}
+
+	// 返回
 	return context{
 		Route:  r,
 		linkEP: ep,
@@ -280,23 +301,41 @@ func TestFragmentation(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
+
+
 			hdr, payload := makeHdrAndPayload(ft.hdrLength, ft.extraLength, ft.payloadViewsSizes)
+
 			source := tcpip.PacketBuffer{
 				Header: hdr,
 				// Save the source payload because WritePacket will modify it.
 				Data: payload.Clone(nil),
 			}
+
+
+			// 构造路由对象
 			c := buildContext(t, nil, ft.mtu)
-			err := c.Route.WritePacket(ft.gso, stack.NetworkHeaderParams{Protocol: tcp.ProtocolNumber, TTL: 42, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
-				Header: hdr,
-				Data:   payload,
-			})
+
+			// 将数据包写入到网络层 ref
+			err := c.Route.WritePacket(
+				ft.gso,
+				stack.NetworkHeaderParams{
+					Protocol: tcp.ProtocolNumber,
+					TTL: 42,
+					TOS: stack.DefaultTOS,
+				},
+				tcpip.PacketBuffer{
+					Header: hdr,
+					Data:   payload,
+				},
+			)
 			if err != nil {
 				t.Errorf("err got %v, want %v", err, nil)
 			}
 
+
 			var results []tcpip.PacketBuffer
-		L:
+
+			L:
 			for {
 				select {
 				case pi := <-c.linkEP.Ch:
@@ -317,8 +356,7 @@ func TestFragmentation(t *testing.T) {
 	}
 }
 
-// TestFragmentationErrors checks that errors are returned from write packet
-// correctly.
+// TestFragmentationErrors checks that errors are returned from write packet correctly.
 func TestFragmentationErrors(t *testing.T) {
 	fragTests := []struct {
 		description           string
@@ -335,19 +373,23 @@ func TestFragmentationErrors(t *testing.T) {
 
 	for _, ft := range fragTests {
 		t.Run(ft.description, func(t *testing.T) {
+
 			hdr, payload := makeHdrAndPayload(ft.hdrLength, header.IPv4MinimumSize, ft.payloadViewsSizes)
+
 			c := buildContext(t, ft.packetCollectorErrors, ft.mtu)
+
 			err := c.Route.WritePacket(&stack.GSO{}, stack.NetworkHeaderParams{Protocol: tcp.ProtocolNumber, TTL: 42, TOS: stack.DefaultTOS}, tcpip.PacketBuffer{
 				Header: hdr,
 				Data:   payload,
 			})
+
 			for i := 0; i < len(ft.packetCollectorErrors)-1; i++ {
 				if got, want := ft.packetCollectorErrors[i], (*tcpip.Error)(nil); got != want {
 					t.Errorf("ft.packetCollectorErrors[%d] got %v, want %v", i, got, want)
 				}
 			}
-			// We only need to check that last error because all the ones before are
-			// nil.
+
+			// We only need to check that last error because all the ones before are nil.
 			if got, want := err, ft.packetCollectorErrors[len(ft.packetCollectorErrors)-1]; got != want {
 				t.Errorf("err got %v, want %v", got, want)
 			}
@@ -446,24 +488,40 @@ func TestInvalidFragments(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+
+			// 网卡 ID
 			const nicID tcpip.NICID = 42
+
+			// 构造协议栈，支持 IPv4 网络层协议
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocol{
 					ipv4.NewProtocol(),
 				},
 			})
 
+			// 本地 mac 地址
 			var linkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x30})
+			// 远端 mac 地址
 			var remoteLinkAddr = tcpip.LinkAddress([]byte{0x30, 0x30, 0x30, 0x30, 0x30, 0x31})
+
+			// 构造链路层 ep
 			ep := channel.New(10, 1500, linkAddr)
+
+			// 根据链路层 ep 构造关联网卡，并启动
 			s.CreateNIC(nicID, sniffer.New(ep))
 
+			// 向链路层 ep 中注入 pkt
 			for _, pkt := range tc.packets {
-				ep.InjectLinkAddr(header.IPv4ProtocolNumber, remoteLinkAddr, tcpip.PacketBuffer{
-					Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
-				})
+				ep.InjectLinkAddr(
+					header.IPv4ProtocolNumber,
+					remoteLinkAddr,
+					tcpip.PacketBuffer{
+						Data: buffer.NewVectorisedView(len(pkt), []buffer.View{pkt}),
+					},
+				)
 			}
 
+			// 结果比对
 			if got, want := s.Stats().IP.MalformedPacketsReceived.Value(), tc.wantMalformedIPPackets; got != want {
 				t.Errorf("incorrect Stats.IP.MalformedPacketsReceived, got: %d, want: %d", got, want)
 			}

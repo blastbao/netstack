@@ -479,9 +479,10 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 
+
 	// 如果必须调用 Resolve() 来解析链路层地址，IsResolutionRequired 会返回 true 。
 	if route.IsResolutionRequired() {
-		//
+		// ARP 解析
 		if ch, err := route.Resolve(nil); err != nil {
 			if err == tcpip.ErrWouldBlock {
 				return 0, ch, tcpip.ErrNoLinkAddress

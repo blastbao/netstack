@@ -801,9 +801,6 @@ func (s *Stack) createNIC(id tcpip.NICID, name string, ep LinkEndpoint, enabled,
 // CreateNIC creates a NIC with the provided id and link-layer endpoint.
 // CreateNIC 使用所提供的网卡 id 和链路层端点 ep 创建 NIC 。
 func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) *tcpip.Error {
-
-
-
 	return s.createNIC(id, "", ep, true, false)
 }
 
@@ -960,7 +957,12 @@ func (s *Stack) AddProtocolAddress(id tcpip.NICID, protocolAddress tcpip.Protoco
 // whether the new endpoint can be primary or not.
 //
 // AddAddressWithOptions 与 AddAddress 相同，但是允许您指定新端点是否可以是主要端点。
-func (s *Stack) AddAddressWithOptions(id tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address, peb PrimaryEndpointBehavior) *tcpip.Error {
+func (s *Stack) AddAddressWithOptions(
+	id tcpip.NICID,
+	protocol tcpip.NetworkProtocolNumber,
+	addr tcpip.Address,
+	peb PrimaryEndpointBehavior,
+) *tcpip.Error {
 
 	// 是否支持该网络协议
 	netProto, ok := s.networkProtocols[protocol]
@@ -1078,11 +1080,11 @@ func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.Netwo
 
 	// 如果没有指定本地 IP 地址
 	if len(localAddr) == 0 {
-		// 获取网卡 nic 上与网络协议号 netProto 关联的主端点。
+		// 获取网卡 nic 上与网络协议号 netProto 关联的主端点
 		return nic.primaryEndpoint(netProto)
 	}
 
-	// 如果指定了本地 IP 地址，
+	// 如果指定了本地 IP 地址，根据该地址查询关联 ep
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
 
@@ -1114,10 +1116,10 @@ func (s *Stack) FindRoute(
 		// 根据网卡 ID 取出 nic
 		if nic, ok := s.nics[id]; ok {
 
-			// 根据 nic、本地 IP、网络协议号来获取关联的 refNetworkEndpoint
+			// 根据本地 IP、网络协议号来获取网卡 nic 上关联的 ep ref
 			if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 
-				// ???
+				// 构造路由对象
 				return makeRoute(
 					netProto,							// 网络层协议号
 					ref.ep.ID().LocalAddress,			// 本地 IP 地址
@@ -1142,17 +1144,17 @@ func (s *Stack) FindRoute(
 			// [匹配]：取出网卡信息，
 			if nic, ok := s.nics[route.NIC]; ok {
 
-				// 根据 网卡、本地 IP 地址、网络协议号来获取关联的 RefNetworkEndpoint
+				// 根据本地 IP、网络协议号来获取网卡 nic 上关联的 ep ref
 				if ref := s.getRefEP(nic, localAddr, netProto); ref != nil {
 
 
-					// 如果没有设置 remoteAddr ，则将其设置为本地 mac 地址。
+					// 如果没有设置 remoteAddr ，则将其设置为本地 mac 地址（loop back）。
 					if len(remoteAddr) == 0 {
 						// If no remote address was provided, then the route provided will refer to the link local address.
 						remoteAddr = ref.ep.ID().LocalAddress
 					}
 
-					//
+					// 构造路由对象
 					r := makeRoute(
 						netProto,                       // 网络协议
 						ref.ep.ID().LocalAddress,       // 本地 ip 地址
@@ -1292,12 +1294,12 @@ func (s *Stack) GetLinkAddress(nicID tcpip.NICID, addr, localAddr tcpip.Address,
 	s.mu.RUnlock()
 
 	// 构造 addr 地址
-	fullAddr := tcpip.FullAddress{NIC: nicID, Addr: addr}
+	fullAddr := tcpip.FullAddress{ NIC: nicID, Addr: addr }
 
 	// 根据网络层协议号取出对应的地址解析器
 	linkRes := s.linkAddrResolvers[protocol]
 
-	//
+	// ...
 	return s.linkAddrCache.get(fullAddr, linkRes, localAddr, nic.linkEP, waker)
 }
 
