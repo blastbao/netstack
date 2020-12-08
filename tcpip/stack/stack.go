@@ -374,8 +374,7 @@ type Stack struct {
 	// rawFactory 是在创建堆栈时设置的，是不可改变的。
 	rawFactory RawFactory
 
-
-	//
+	// 传输层多路复用器
 	demux *transportDemuxer
 
 	stats tcpip.Stats
@@ -1324,18 +1323,20 @@ func (s *Stack) RemoveWaker(nicID tcpip.NICID, addr tcpip.Address, waker *sleep.
 // nic-specific IDs have precedence over global ones.
 //
 // RegisterTransportEndpoint 将给定的 endpoint 注册到协议栈传输层调度器上。
-// 接收到的 id 的数据包将被传送到给定的 endpoint ；指定 nic 是可选的，但 nic 特定的 id 比全局的 id 优先。
+// 接收到的 id 的数据包将被传送到给定的 endpoint ；
+// 指定 nic 是可选的，但 nic 特定的 id 比全局的 id 优先。
 //
 func (s *Stack) RegisterTransportEndpoint(
-	nicID tcpip.NICID,
-	netProtos []tcpip.NetworkProtocolNumber,
-	protocol tcpip.TransportProtocolNumber,
-	id TransportEndpointID,
-	ep TransportEndpoint,
-	reusePort bool,
-	bindToDevice tcpip.NICID,
+	nicID tcpip.NICID, // 网卡 ID
+	netProtos []tcpip.NetworkProtocolNumber, // 网络层协议
+	protocol tcpip.TransportProtocolNumber,	// 传输层协议
+	id TransportEndpointID, // 传输层四元组
+	ep TransportEndpoint,	// 传输层 ep
+	reusePort bool, // 端口重用标识
+	bindToDevice tcpip.NICID, // 绑定到设备(网卡)
 ) *tcpip.Error {
 
+	// 将 ep 注册到传输层多路复用器。
 	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
 
 }

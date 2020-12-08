@@ -1211,12 +1211,11 @@ func (e *endpoint) registerWithStack(
 	*tcpip.Error,
 ) {
 
-
 	// 若未指定本地端口，则分配一个临时端口号，保存到 id.LocalPort 。
 	if e.ID.LocalPort == 0 {
 		port, err := e.stack.ReservePort(
-			netProtos,			// 实际使用的网络协议
-			ProtocolNumber,		// UDP 协议号
+			netProtos,			// 网络层协议: IP
+			ProtocolNumber,		// 传输层协议: UDP
 			id.LocalAddress,	// 本地地址
 			id.LocalPort,		// 本地端口
 			e.reusePort,		// 重用端口
@@ -1228,13 +1227,12 @@ func (e *endpoint) registerWithStack(
 		id.LocalPort = port
 	}
 
-
 	// 将 endpoint 注册到协议栈传输层，协议号指明为 UDP ，这样后续的 UDP 包会发送到本 endpoint 上来。
 	err := e.stack.RegisterTransportEndpoint(
 		nicID,				// 网卡 ID
-		netProtos,			// 实际使用的网络协议
-		ProtocolNumber, 	// UDP 协议号
-		id,					// 传输层协议端点的标识符，四元组 <本地端口, 本地地址，远程端口， 远程地址>
+		netProtos,			// 网络层协议: IP
+		ProtocolNumber, 	// 传输层协议: UDP
+		id,					// 传输层协议端点的标识符，四元组 <本地端口, 本地地址，远程端口，远程地址>
 		e, 					// 实现了 TransportEndpoint 接口，包括 HandlePacket(), HandleControlPacket() 等函数
 		e.reusePort,		// 是否重用端口
 		e.bindToDevice,		// 是否将套接字绑定到指定网卡，例如 eth0 等
