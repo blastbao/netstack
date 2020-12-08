@@ -25,7 +25,13 @@ import (
 	"github.com/blastbao/netstack/tcpip/header"
 )
 
-//
+// protocolID{ NetProto, TransProto }
+// 	=> transportEndpoints: 传输层四元组 => endpointsByNic
+// 		=> endpointsByNic
+// 			=> multiPortEndpoint
+// 				=> []TransportEndpoint
+
+
 type protocolIDs struct {
 	network   tcpip.NetworkProtocolNumber
 	transport tcpip.TransportProtocolNumber
@@ -40,7 +46,7 @@ type transportEndpoints struct {
 	// mu protects all fields of the transportEndpoints.
 	mu sync.RWMutex
 
-	//
+	// [重要] 传输层四元组 => Endpoints，相同的四元组，在传输层协议 protocolID 不同的情况下，对应不同的 Endpoint 。
 	endpoints map[TransportEndpointID]*endpointsByNic
 
 	// rawEndpoints contains endpoints for raw sockets,
@@ -84,16 +90,17 @@ func (eps *transportEndpoints) transportEndpoints() []TransportEndpoint {
 type endpointsByNic struct {
 	mu        sync.RWMutex
 
+	// 网卡 ID => TransportEndpoints
 	endpoints map[tcpip.NICID]*multiPortEndpoint
 
 	// seed is a random secret for a jenkins hash.
 	seed uint32
-
 }
 
 func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
 	epsByNic.mu.RLock()
 	defer epsByNic.mu.RUnlock()
+
 	var eps []TransportEndpoint
 	for _, ep := range epsByNic.endpoints {
 		eps = append(eps, ep.transportEndpoints()...)
@@ -106,14 +113,16 @@ func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
 func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) {
 	epsByNic.mu.RLock()
 
-	//
+	// 获取绑定到网卡 ID 上的端点
 	mpep, ok := epsByNic.endpoints[r.ref.nic.ID()]
 	if !ok {
+		// 如果不存在，则取 0 号网卡，如果 0 号网卡仍不存在，直接返回。
 		if mpep, ok = epsByNic.endpoints[0]; !ok {
 			epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
 			return
 		}
 	}
+
 
 	// If this is a broadcast or multicast datagram, deliver the datagram to all
 	// endpoints bound to the right device.
@@ -127,7 +136,9 @@ func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, p
 
 	// multiPortEndpoints are guaranteed to have at least one element.
 	// 保证 multiPortEndpoints 具有至少一个元素。
+
 	selectEndpoint(id, mpep, epsByNic.seed).HandlePacket(r, id, pkt)
+
 	epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
 }
 
@@ -170,18 +181,24 @@ func (epsByNic *endpointsByNic) registerEndpoint(t TransportEndpoint, reusePort 
 	epsByNic.mu.Lock()
 	defer epsByNic.mu.Unlock()
 
-	//
+	// 根据 bindToDevice 查询绑定到该设备的传输层 eps 。
 	if multiPortEp, ok := epsByNic.endpoints[bindToDevice]; ok {
 		// There was already a bind.
+		// 若已存在，则向 multiPortEp 注册新端点 t 。
 		return multiPortEp.singleRegisterEndpoint(t, reusePort)
 	}
+
+	// 至此，意味着尚无端点绑定到 bindToDevice 设备。
 
 	// This is a new binding.
 	multiPortEp := &multiPortEndpoint{}
 	multiPortEp.endpointsMap = make(map[TransportEndpoint]int)
 	multiPortEp.reuse = reusePort
 	epsByNic.endpoints[bindToDevice] = multiPortEp
-	return multiPortEp.singleRegisterEndpoint(t, reusePort)
+
+	err := multiPortEp.singleRegisterEndpoint(t, reusePort)
+	return err
+
 }
 
 // unregisterEndpoint returns true if endpointsByNic has to be unregistered.
@@ -208,13 +225,16 @@ func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t T
 // 它执行两个级别的多路复用分解：首先基于网络和传输协议，然后基于端点ID。
 //
 // 它只能通过newTransportDemuxer实例化。
+//
+//
+//
 type transportDemuxer struct {
 	// protocol is immutable.
+	// protocol 保存和协议关联的所有传输层端点。
 	protocol map[protocolIDs]*transportEndpoints
 }
 
 func newTransportDemuxer(stack *Stack) *transportDemuxer {
-
 
 	// 构造传输层多路复用器
 	demuxer := &transportDemuxer{
@@ -227,7 +247,7 @@ func newTransportDemuxer(stack *Stack) *transportDemuxer {
 	for netProto := range stack.networkProtocols {
 		// 遍历协议栈支持的传输层协议
 		for proto := range stack.transportProtocols {
-			// Id{网络层协议, 传输层协议}
+			// 构造协议ID: {网络层协议, 传输层协议}
 			id := protocolIDs{netProto, proto}
 			// 注册到多路复用分解器 demuxer 中
 			demuxer.protocol[id] = &transportEndpoints{endpoints: make(map[TransportEndpointID]*endpointsByNic)}
@@ -364,10 +384,14 @@ func (ep *multiPortEndpoint) Wait() {
 
 // singleRegisterEndpoint tries to add an endpoint to the multiPortEndpoint list.
 // The list might be empty already.
+//
+// singleRegisterEndpoint 试图向 multiPortEndpoint 列表添加一个端点。该列表可能已经是空的。
 func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, reusePort bool) *tcpip.Error {
+
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
+	// 如果列表非空，即代表之前已经绑定，如果 ep 未开启端口重用，或者新端点不支持端口重用，则无法绑定，报错返回。
 	if len(ep.endpointsArr) > 0 {
 		// If it was previously bound, we need to check if we can bind again.
 		if !ep.reuse || !reusePort {
@@ -375,19 +399,34 @@ func (ep *multiPortEndpoint) singleRegisterEndpoint(t TransportEndpoint, reusePo
 		}
 	}
 
-	// A new endpoint is added into endpointsArr and its index there is saved in
-	// endpointsMap. This will allow us to remove endpoint from the array fast.
+	// 至此，要么列表为空，要么支持端口重用，可以注册新端点。
+
+	// A new endpoint is added into endpointsArr and its index there is saved in endpointsMap.
+	// This will allow us to remove endpoint from the array fast.
+	//
+	// 一个新的端点被添加到 endpointsArr 中，它的索引被保存在 endpointsMap 中。
+	// 这将允许我们从数组中快速删除端点。
+
+	// 将下标添加到 endpointsMap 中。
 	ep.endpointsMap[t] = len(ep.endpointsArr)
+	// 将端点追加到 endpointsArr 中。
 	ep.endpointsArr = append(ep.endpointsArr, t)
 
 	// ep.endpointsArr is sorted by endpoint unique IDs, so that endpoints
 	// can be restored in the same order.
+	//
+	// ep.endpointsArr 是按端点 UniqueID 排序的，因此可以按相同的顺序恢复。
+
+	// 对 endpointsArr 进行排序。
 	sort.Slice(ep.endpointsArr, func(i, j int) bool {
 		return ep.endpointsArr[i].UniqueID() < ep.endpointsArr[j].UniqueID()
 	})
+
+	// 更新索引 map 中存储的下标。
 	for i, e := range ep.endpointsArr {
 		ep.endpointsMap[e] = i
 	}
+
 	return nil
 }
 
@@ -412,10 +451,6 @@ func (ep *multiPortEndpoint) unregisterEndpoint(t TransportEndpoint) bool {
 	}
 	return true
 }
-
-
-
-
 
 func (d *transportDemuxer) singleRegisterEndpoint(
 	netProto tcpip.NetworkProtocolNumber,
@@ -442,11 +477,14 @@ func (d *transportDemuxer) singleRegisterEndpoint(
 	defer eps.mu.Unlock()
 
 
+
 	// 根据四元组 id 查询 eps
 	if epsByNic, ok := eps.endpoints[id]; ok {
 		// There was already a binding.
 		return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
 	}
+
+
 
 	// This is a new binding.
 	epsByNic := &endpointsByNic{
@@ -484,7 +522,6 @@ var loopbackSubnet = func() tcpip.Subnet {
 //
 // deliverPacket() 试图寻找一个或多个匹配的传输层端点，如果找到匹配的端点，则将数据包传送给它们。如果不再需要处理该数据包，则返回 true 。
 func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer, id TransportEndpointID) bool {
-
 
 	// 根据 netProto 和 transProto 定位到 transport eps
 	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
