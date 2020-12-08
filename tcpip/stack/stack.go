@@ -374,6 +374,8 @@ type Stack struct {
 	// rawFactory 是在创建堆栈时设置的，是不可改变的。
 	rawFactory RawFactory
 
+
+	//
 	demux *transportDemuxer
 
 	stats tcpip.Stats
@@ -600,9 +602,11 @@ func New(opts Options) *Stack {
 		s.transportProtocols[transProto.Number()] = &transportProtocolState{proto: transProto}
 	}
 
+
 	// Add the factory for raw endpoints, if present.
 	// 如果存在的话，设置原始端点的工厂。
 	s.rawFactory = opts.RawFactory
+
 
 	// Create the global transport demuxer.
 	// 创建全局传输解调器。
@@ -1331,7 +1335,9 @@ func (s *Stack) RegisterTransportEndpoint(
 	reusePort bool,
 	bindToDevice tcpip.NICID,
 ) *tcpip.Error {
+
 	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
+
 }
 
 // UnregisterTransportEndpoint removes the endpoint with the given id from the

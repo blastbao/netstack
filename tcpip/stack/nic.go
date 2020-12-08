@@ -446,25 +446,24 @@ func (n *NIC) getRefOrCreateTemp(
 	// Add a new temporary endpoint.
 	// 增加一个新的临时端点。
 
+
+	// 检查协议栈是否支持网络层协议
 	netProto, ok := n.stack.networkProtocols[protocol]
 	if !ok {
 		n.mu.Unlock()
 		return nil
 	}
 
-	//
+	// 获取网络层端点引用
 	ref, _ := n.addAddressLocked(
-		// 网络层地址
 		tcpip.ProtocolAddress{
-			Protocol: protocol, // 网络层协议号
-			AddressWithPrefix: tcpip.AddressWithPrefix{ // 网络层前缀地址
-				Address:   address,                     // 地址
-				PrefixLen: netProto.DefaultPrefixLen(), // 前缀长度
+			Protocol: protocol,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   address,
+				PrefixLen: netProto.DefaultPrefixLen(),
 			},
 		},
-		//
 		peb,
-		//
 		temporary,
 	)
 
@@ -563,14 +562,12 @@ func (n *NIC) addPermanentAddressLocked(protocolAddress tcpip.ProtocolAddress, p
 	return n.addAddressLocked(protocolAddress, peb, permanent)
 }
 
-//
+//步骤:
 // 根据 protocolAddress.Protocol 获取协议栈 stack 的网络层协议对象 netProto ，如 network/ipv4, network/ipv6 ...
 // 调用 netProto.NewEndpoint() 创建网络层端点 ep ，它具有 WritePacket/HandlePacket 函数支持发/收网络包
 // 构造端点 ep 的引用对象 ref ，并将其添加到网卡的 endpoints 列表中
 // 根据 peb 将 ref 添加到网卡 n 的 primary 列表（尾部或首部）
 // 返回 ref
-//
-//
 func (n *NIC) addAddressLocked(
 	protocolAddress tcpip.ProtocolAddress, // 网络层协议 + 地址
 	peb PrimaryEndpointBehavior, // primary 端点类型

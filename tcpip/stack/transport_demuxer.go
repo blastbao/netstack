@@ -25,19 +25,23 @@ import (
 	"github.com/blastbao/netstack/tcpip/header"
 )
 
+//
 type protocolIDs struct {
 	network   tcpip.NetworkProtocolNumber
 	transport tcpip.TransportProtocolNumber
 }
 
-// transportEndpoints manages all endpoints of a given protocol. It has its own
-// mutex so as to reduce interference between protocols.
+// transportEndpoints manages all endpoints of a given protocol.
+// It has its own mutex so as to reduce interference between protocols.
 type transportEndpoints struct {
+
 	// mu protects all fields of the transportEndpoints.
 	mu        sync.RWMutex
+
 	endpoints map[TransportEndpointID]*endpointsByNic
-	// rawEndpoints contains endpoints for raw sockets, which receive all
-	// traffic of a given protocol regardless of port.
+
+	// rawEndpoints contains endpoints for raw sockets,
+	// which receive all traffic of a given protocol regardless of port.
 	rawEndpoints []RawTransportEndpoint
 }
 
@@ -83,8 +87,7 @@ func (epsByNic *endpointsByNic) transportEndpoints() []TransportEndpoint {
 	return eps
 }
 
-// HandlePacket is called by the stack when new packets arrive to this transport
-// endpoint.
+// HandlePacket is called by the stack when new packets arrive to this transport endpoint.
 func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, pkt tcpip.PacketBuffer) {
 	epsByNic.mu.RLock()
 
@@ -103,6 +106,8 @@ func (epsByNic *endpointsByNic) handlePacket(r *Route, id TransportEndpointID, p
 		epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
 		return
 	}
+
+
 	// multiPortEndpoints are guaranteed to have at least one element.
 	selectEndpoint(id, mpep, epsByNic.seed).HandlePacket(r, id, pkt)
 	epsByNic.mu.RUnlock() // Don't use defer for performance reasons.
@@ -161,39 +166,74 @@ func (epsByNic *endpointsByNic) unregisterEndpoint(bindToDevice tcpip.NICID, t T
 	return len(epsByNic.endpoints) == 0
 }
 
+
+
+
 // transportDemuxer demultiplexes packets targeted at a transport endpoint
 // (i.e., after they've been parsed by the network layer). It does two levels
 // of demultiplexing: first based on the network and transport protocols, then
-// based on endpoints IDs. It should only be instantiated via
-// newTransportDemuxer.
+// based on endpoints IDs. It should only be instantiated via newTransportDemuxer.
+//
+// transportDemuxer 对以传输层 ep 为目标的数据包进行多路复用分解（即在被网络层解析之后）。
+//
+// 它执行两个级别的多路复用分解：首先基于网络和传输协议，然后基于端点ID。
+//
+// 它只能通过newTransportDemuxer实例化。
 type transportDemuxer struct {
 	// protocol is immutable.
 	protocol map[protocolIDs]*transportEndpoints
 }
 
+
+
 func newTransportDemuxer(stack *Stack) *transportDemuxer {
-	d := &transportDemuxer{protocol: make(map[protocolIDs]*transportEndpoints)}
+
+	demuxer := &transportDemuxer{
+		protocol: make(map[protocolIDs]*transportEndpoints),
+	}
 
 	// Add each network and transport pair to the demuxer.
+
+
+	// 遍历协议栈支持的网络层协议
 	for netProto := range stack.networkProtocols {
+		// 遍历协议栈支持的传输层协议
 		for proto := range stack.transportProtocols {
-			d.protocol[protocolIDs{netProto, proto}] = &transportEndpoints{
-				endpoints: make(map[TransportEndpointID]*endpointsByNic),
-			}
+			// Id{网络层协议, 传输层协议}
+			id := protocolIDs{netProto, proto}
+			// 注册到多路复用分解器 demuxer 中
+			demuxer.protocol[id] = &transportEndpoints{endpoints: make(map[TransportEndpointID]*endpointsByNic)}
 		}
 	}
 
-	return d
+	return demuxer
 }
 
 // registerEndpoint registers the given endpoint with the dispatcher such that
 // packets that match the endpoint ID are delivered to it.
-func (d *transportDemuxer) registerEndpoint(netProtos []tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+//
+// registerEndpoint 将给定的端点注册到 demuxer 上，以便将与端点 ID 匹配的数据包传递给它。
+func (d *transportDemuxer) registerEndpoint(
+	netProtos []tcpip.NetworkProtocolNumber,	// 网络层协议号
+	protocol tcpip.TransportProtocolNumber,		// 传输层协议号
+	id TransportEndpointID,						// 传输层端点
+	ep TransportEndpoint,						// 传输层端点
+	reusePort bool,								// 端口重用
+	bindToDevice tcpip.NICID,					// 绑定到设备
+) *tcpip.Error {
+
+
+	//
 	for i, n := range netProtos {
+
+
 		if err := d.singleRegisterEndpoint(n, protocol, id, ep, reusePort, bindToDevice); err != nil {
+
 			d.unregisterEndpoint(netProtos[:i], protocol, id, ep, bindToDevice)
 			return err
 		}
+
+
 	}
 
 	return nil
@@ -341,11 +381,21 @@ func (ep *multiPortEndpoint) unregisterEndpoint(t TransportEndpoint) bool {
 	return true
 }
 
-func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocolNumber, protocol tcpip.TransportProtocolNumber, id TransportEndpointID, ep TransportEndpoint, reusePort bool, bindToDevice tcpip.NICID) *tcpip.Error {
+func (d *transportDemuxer) singleRegisterEndpoint(
+	netProto tcpip.NetworkProtocolNumber,
+	protocol tcpip.TransportProtocolNumber,
+	id TransportEndpointID,
+	ep TransportEndpoint,
+	reusePort bool,
+	bindToDevice tcpip.NICID,
+) *tcpip.Error {
+
+
 	if id.RemotePort != 0 {
 		// TODO(eyalsoha): Why?
 		reusePort = false
 	}
+
 
 	eps, ok := d.protocol[protocolIDs{netProto, protocol}]
 	if !ok {
@@ -355,10 +405,13 @@ func (d *transportDemuxer) singleRegisterEndpoint(netProto tcpip.NetworkProtocol
 	eps.mu.Lock()
 	defer eps.mu.Unlock()
 
+
+	//
 	if epsByNic, ok := eps.endpoints[id]; ok {
 		// There was already a binding.
 		return epsByNic.registerEndpoint(ep, reusePort, bindToDevice)
 	}
+
 
 	// This is a new binding.
 	epsByNic := &endpointsByNic{
@@ -392,6 +445,8 @@ var loopbackSubnet = func() tcpip.Subnet {
 // then, if matches are found, delivers the packet to them. Returns true if
 // the packet no longer needs to be handled.
 func (d *transportDemuxer) deliverPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer, id TransportEndpointID) bool {
+
+
 	eps, ok := d.protocol[protocolIDs{r.NetProto, protocol}]
 	if !ok {
 		return false

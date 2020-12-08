@@ -1179,6 +1179,9 @@ func (e *endpoint) resetConnectionLocked(err *tcpip.Error) {
 
 // completeWorkerLocked is called by the worker goroutine when it's about to exit.
 // It marks the worker as completed and performs cleanup work if requested by Close().
+//
+//
+//
 func (e *endpoint) completeWorkerLocked() {
 	e.workerRunning = false
 	if e.workerCleanup {

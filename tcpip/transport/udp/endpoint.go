@@ -338,12 +338,13 @@ func (e *endpoint) connectRoute(
 ) ( stack.Route, tcpip.NICID, *tcpip.Error ) {
 
 
-
 	localAddr := e.ID.LocalAddress
+
 	if isBroadcastOrMulticast(localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
 		localAddr = ""
 	}
+
 
 	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
 
@@ -357,8 +358,8 @@ func (e *endpoint) connectRoute(
 
 	}
 
-
 	// Find a route to the desired destination.
+	// 创建一条通往给定目标地址的路由。
 	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, err
@@ -431,6 +432,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		dstPort = e.dstPort
 
 		if route.IsResolutionRequired() {
+
 			// Promote lock to exclusive if using a shared route,
 			// given that it may need to change in Route.Resolve() call below.
 			e.mu.RUnlock()
@@ -1035,6 +1037,7 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 		e.state = StateInitial
 	}
 
+	//
 	e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
 	e.ID = id
 	e.route.Release()
@@ -1067,6 +1070,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	nicID := addr.NIC
 	var localPort uint16
 
+
 	switch e.state {
 	// 当前 endpoint 处于 init 状态，则可以 connect 。
 	case StateInitial:
@@ -1084,12 +1088,14 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		return tcpip.ErrInvalidEndpointState
 	}
 
+
 	//
 	r, nicID, err := e.connectRoute(nicID, addr, netProto)
 	if err != nil {
 		return err
 	}
 	defer r.Release()
+
 
 
 	// 传输层端点标识符
@@ -1119,7 +1125,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 	}
 
 
-
+	//
 	id, err = e.registerWithStack(nicID, netProtos, id)
 	if err != nil {
 		return err
@@ -1190,7 +1196,21 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 	return nil, nil, tcpip.ErrNotSupported
 }
 
-func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.NetworkProtocolNumber, id stack.TransportEndpointID) (stack.TransportEndpointID, *tcpip.Error) {
+
+//
+//
+//
+//
+//
+func (e *endpoint) registerWithStack(
+	nicID tcpip.NICID,
+	netProtos []tcpip.NetworkProtocolNumber,
+	id stack.TransportEndpointID,
+) (
+	stack.TransportEndpointID,
+	*tcpip.Error,
+) {
+
 
 	// 若未指定本地端口，则分配一个临时端口号，保存到 id.LocalPort 。
 	if e.ID.LocalPort == 0 {
@@ -1208,6 +1228,7 @@ func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.Networ
 		id.LocalPort = port
 	}
 
+
 	// 将 endpoint 注册到协议栈传输层，协议号指明为 UDP ，这样后续的 UDP 包会发送到本 endpoint 上来。
 	err := e.stack.RegisterTransportEndpoint(
 		nicID,				// 网卡 ID
@@ -1222,8 +1243,11 @@ func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.Networ
 	if err != nil {
 		e.stack.ReleasePort(netProtos, ProtocolNumber, id.LocalAddress, id.LocalPort, e.bindToDevice)
 	}
+
 	return id, err
 }
+
+
 
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
 
