@@ -220,7 +220,7 @@ func (r *Route) IsResolutionRequired() bool {
 }
 
 // WritePacket writes the packet through the given route.
-// WritePacket 通过给定路由写入数据包。
+// WritePacket 通过给定路由写入网络层数据包。
 func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.PacketBuffer) *tcpip.Error {
 
 	// 检查端点是否可用来发送数据包

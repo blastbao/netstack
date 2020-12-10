@@ -189,19 +189,21 @@ type TransportProtocol interface {
 // the network layer.
 type TransportDispatcher interface {
 
-	// DeliverTransportPacket delivers packets to the appropriate
-	// transport protocol endpoint.
+	// DeliverTransportPacket delivers packets to the appropriate transport protocol endpoint.
 	//
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
 	// DeliverTransportPacket takes ownership of pkt.
+	//
+	// DeliverTransportPacket() 将数据包传送到适当的传输协议端点。
+	// 在调用 DeliverTransportPacket() 之前必须设置 pkt.NetworkHeader 。
+	// DeliverTransportPacket() 会获得 pkt.NetworkHeader 的所有权。
 	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer)
 
-	// DeliverTransportControlPacket delivers control packets to the
-	// appropriate transport protocol endpoint.
+
+	// DeliverTransportControlPacket delivers control packets to the appropriate transport protocol endpoint.
 	//
-	// pkt.NetworkHeader must be set before calling
-	// DeliverTransportControlPacket.
+	// pkt.NetworkHeader must be set before calling DeliverTransportControlPacket.
 	//
 	// DeliverTransportControlPacket takes ownership of pkt.
 	DeliverTransportControlPacket(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, typ ControlType, extra uint32, pkt tcpip.PacketBuffer)

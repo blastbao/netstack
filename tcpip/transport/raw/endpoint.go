@@ -39,11 +39,13 @@ import (
 // +stateify savable
 type rawPacket struct {
 	rawPacketEntry
-	// data holds the actual packet data, including any headers and
-	// payload.
+
+	// data holds the actual packet data, including any headers and payload.
 	data buffer.VectorisedView
+
 	// timestampNS is the unix time at which the packet was received.
 	timestampNS int64
+
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
 }
@@ -89,11 +91,20 @@ func NewEndpoint(stack *stack.Stack, netProto tcpip.NetworkProtocolNumber, trans
 	return newEndpoint(stack, netProto, transProto, waiterQueue, true /* associated */)
 }
 
-func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, waiterQueue *waiter.Queue, associated bool) (tcpip.Endpoint, *tcpip.Error) {
+func newEndpoint(
+	s *stack.Stack,
+	netProto tcpip.NetworkProtocolNumber,
+	transProto tcpip.TransportProtocolNumber,
+	waiterQueue *waiter.Queue,
+	associated bool,
+) (tcpip.Endpoint, *tcpip.Error) {
+
+	// 只支持 IPv4
 	if netProto != header.IPv4ProtocolNumber {
 		return nil, tcpip.ErrUnknownProtocol
 	}
 
+	// 构造 raw ep
 	e := &endpoint{
 		stack: s,
 		TransportEndpointInfo: stack.TransportEndpointInfo{
@@ -106,15 +117,17 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 		associated:    associated,
 	}
 
-	// Unassociated endpoints are write-only and users call Write() with IP
-	// headers included. Because they're write-only, We don't need to
-	// register with the stack.
+	// Unassociated endpoints are write-only and users call Write() with IP headers included.
+	// Because they're write-only, We don't need to register with the stack.
+	//
+	// 未关联的 eps 是只写的，用户在调用 Write() 时会包括 IP 头，因为是只写的，所以不需要向协议栈注册。
 	if !associated {
 		e.rcvBufSizeMax = 0
 		e.waiterQueue = nil
 		return e, nil
 	}
 
+	// 将 raw ep 注册到协议栈，当协议栈接收到与 netProto、transProto 协议相匹配的数据包时，会投递给 raw ep 。
 	if err := e.stack.RegisterRawTransportEndpoint(e.RegisterNICID, e.NetProto, e.TransProto, e); err != nil {
 		return nil, err
 	}
@@ -124,6 +137,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 
 // Close implements tcpip.Endpoint.Close.
 func (e *endpoint) Close() {
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -163,14 +177,16 @@ func (e *endpoint) IPTables() (iptables.IPTables, error) {
 
 // Read implements tcpip.Endpoint.Read.
 func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMessages, *tcpip.Error) {
+
+	// 如果 associated 为 false ，则是 write-only 的，不支持读操作。
 	if !e.associated {
 		return buffer.View{}, tcpip.ControlMessages{}, tcpip.ErrInvalidOptionValue
 	}
 
 	e.rcvMu.Lock()
 
-	// If there's no data to read, return that read would block or that the
-	// endpoint is closed.
+	// If there's no data to read, return that read would block or that the endpoint is closed.
+	// 如果 rcvList 中没有数据可读，返回 `读阻塞` 或 `端点已关闭` 。
 	if e.rcvList.Empty() {
 		err := tcpip.ErrWouldBlock
 		if e.rcvClosed {
@@ -181,6 +197,8 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		return buffer.View{}, tcpip.ControlMessages{}, err
 	}
 
+
+	// 如果 rcvList 中有数据可读，取出队首 pkt
 	pkt := e.rcvList.Front()
 	e.rcvList.Remove(pkt)
 	e.rcvBufSize -= pkt.data.Size()
@@ -191,12 +209,17 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		*addr = pkt.senderAddr
 	}
 
+	// 返回 pkt 和 ctrl msg
 	return pkt.data.ToView(), tcpip.ControlMessages{HasTimestamp: true, Timestamp: pkt.timestampNS}, nil
 }
 
 // Write implements tcpip.Endpoint.Write.
 func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+
+
 	n, ch, err := e.write(p, opts)
+
+	// 错误统计
 	switch err {
 	case nil:
 		e.stats.PacketsSent.Increment()
@@ -215,10 +238,14 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 		// For all other errors when writing to the network layer.
 		e.stats.SendErrors.SendToNetworkFailed.Increment()
 	}
+
+	//
 	return n, ch, err
 }
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+
+
 	// MSG_MORE is unimplemented. This also means that MSG_EOR is a no-op.
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue

@@ -28,7 +28,7 @@ import (
 // +stateify savable
 type udpPacket struct {
 	udpPacketEntry
-	senderAddress tcpip.FullAddress
+	senderAddress tcpip.FullAddress 	// 发送者地址
 	data          buffer.VectorisedView
 	timestamp     int64
 }
@@ -189,10 +189,11 @@ func (e *endpoint) UniqueID() uint64 {
 	return e.uniqueID
 }
 
-// Close puts the endpoint in a closed state and frees all resources
-// associated with it.
+// Close puts the endpoint in a closed state and frees all resources associated with it.
+// Close 使端点处于关闭状态，并释放与之相关的所有资源。
 func (e *endpoint) Close() {
 	e.mu.Lock()
+
 	e.shutdownFlags = tcpip.ShutdownRead | tcpip.ShutdownWrite
 
 	switch e.state {
@@ -263,7 +264,7 @@ func (e *endpoint) Read(addr *tcpip.FullAddress) (buffer.View, tcpip.ControlMess
 		*addr = p.senderAddress
 	}
 
-	// 返回该报文
+	// 返回该 UDP 报文和控制信息
 	return p.data.ToView(), tcpip.ControlMessages{
 		HasTimestamp: true,
 		Timestamp: p.timestamp,
@@ -331,23 +332,29 @@ func (e *endpoint) prepareForWrite(to *tcpip.FullAddress) (retry bool, err *tcpi
 // connectRoute establishes a route to the specified interface or the
 // configured multicast interface if no interface is specified and the
 // specified address is a multicast address.
+//
+// connectRoute 建立一条通往指定接口的路由，如果没有指定接口且指定的地址是组播地址，则建立通往指定接口或配置的组播接口的路由。
 func (e *endpoint) connectRoute(
 	nicID tcpip.NICID,
-	addr tcpip.FullAddress,
+	dstAddr tcpip.FullAddress,
 	netProto tcpip.NetworkProtocolNumber,
 ) ( stack.Route, tcpip.NICID, *tcpip.Error ) {
 
 
+
 	localAddr := e.ID.LocalAddress
 
+	// 源地址不能是是多播或者组播地址，如果是则置空
 	if isBroadcastOrMulticast(localAddr) {
 		// A packet can only originate from a unicast address (i.e., an interface).
+		// 一个数据包只能来源于一个单播地址（即接口）。
 		localAddr = ""
 	}
 
+	// 如果目标地址为多播地址，
+	if header.IsV4MulticastAddress(dstAddr.Addr) || header.IsV6MulticastAddress(dstAddr.Addr) {
 
-	if header.IsV4MulticastAddress(addr.Addr) || header.IsV6MulticastAddress(addr.Addr) {
-
+		// 未指定网卡，则通过广播网卡
 		if nicID == 0 {
 			nicID = e.multicastNICID
 		}
@@ -360,7 +367,7 @@ func (e *endpoint) connectRoute(
 
 	// Find a route to the desired destination.
 	// 创建一条通往给定目标地址的路由。
-	r, err := e.stack.FindRoute(nicID, localAddr, addr.Addr, netProto, e.multicastLoop)
+	r, err := e.stack.FindRoute(nicID, localAddr, dstAddr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, err
 	}
@@ -393,6 +400,15 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	return n, ch, err
 }
 
+
+
+
+
+
+
+//
+//
+//
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
 
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
@@ -494,20 +510,20 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 
 
-	// 从 p 中读取所有可读字节。
+	// 从 p 中读取所有待写数据。
 	v, err := p.FullPayload()
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// 如果可读数据大小超过 UDP 最大报文长度，则报错。
+	// 如果待写数据大小超过 UDP 最大报文长度，则报错。
 	if len(v) > header.UDPMaximumPacketSize {
 		// Payload can't possibly fit in a packet.
 		// 有效载荷太大了，不可能装在一个包里。
 		return 0, nil, tcpip.ErrMessageTooLong
 	}
 
-
+	// 报文生存时间
 	ttl := e.ttl
 	useDefaultTTL := ttl == 0 // 若 ttl 为 0 则需要使用默认的 ttl
 
@@ -890,7 +906,7 @@ func (e *endpoint) GetSockOpt(opt interface{}) *tcpip.Error {
 func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort uint16, ttl uint8, useDefaultTTL bool, tos uint8) *tcpip.Error {
 
 	// Allocate a buffer for the UDP header.
-	// 先为头部准备出一个 buffer
+	// 为头部分配 buffer
 	hdr := buffer.NewPrependable(header.UDPMinimumSize + int(r.MaxHeaderLength()))
 
 	// Initialize the header.
@@ -921,6 +937,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 		udp.SetChecksum(^udp.CalculateChecksum(xsum))
 	}
 
+	// 设置 ttl 报文最大生成时间
 	if useDefaultTTL {
 		ttl = r.DefaultTTL()
 	}
@@ -929,7 +946,7 @@ func sendUDP(r *stack.Route, data buffer.VectorisedView, localPort, remotePort u
 	if err := r.WritePacket(
 		nil /* gso */,				// 通用分段策略
 		stack.NetworkHeaderParams{		// 网络层 Header
-			Protocol: ProtocolNumber,	// 传输层协议号
+			Protocol: ProtocolNumber,	// 传输层协议号 IPv4、IPv6
 			TTL: ttl,					// 报文最大生存时间
 			TOS: tos,					// 服务类型
 		},
@@ -957,6 +974,7 @@ func (e *endpoint) checkV4Mapped(addr *tcpip.FullAddress, allowMismatch bool) (t
 
 	// 获取本 endpoint 的网络层协议号
 	netProto := e.NetProto
+
 	// 如果待检查地址为空，则直接返回
 	if len(addr.Addr) == 0 {
 		return netProto, nil
@@ -1048,28 +1066,25 @@ func (e *endpoint) Disconnect() *tcpip.Error {
 }
 
 // Connect connects the endpoint to its peer. Specifying a NIC is optional.
-func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
+func (e *endpoint) Connect(dstAddr tcpip.FullAddress) *tcpip.Error {
 
-
-	// 根据 addr 获取网络层协议号(IPv4 or IPv6)
-	netProto, err := e.checkV4Mapped(&addr, false)
+	// 根据目标地址 dstAddr 获取网络层协议号(IPv4 or IPv6)
+	netProto, err := e.checkV4Mapped(&dstAddr, false)
 	if err != nil {
 		return err
 	}
 
 	// 不支持 connect 到 port 为 0 的目标
-	if addr.Port == 0 {
+	if dstAddr.Port == 0 {
 		// We don't support connecting to port zero.
 		return tcpip.ErrInvalidEndpointState
 	}
 
-
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	nicID := addr.NIC
+	nicID := dstAddr.NIC
 	var localPort uint16
-
 
 	switch e.state {
 	// 当前 endpoint 处于 init 状态，则可以 connect 。
@@ -1090,21 +1105,21 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 
 	//
-	r, nicID, err := e.connectRoute(nicID, addr, netProto)
+	r, nicID, err := e.connectRoute(nicID, dstAddr, netProto)
 	if err != nil {
 		return err
 	}
 	defer r.Release()
 
 
-
 	// 传输层端点标识符
 	id := stack.TransportEndpointID{
-		LocalAddress:  e.ID.LocalAddress,
-		LocalPort:     localPort,
-		RemotePort:    addr.Port,
-		RemoteAddress: r.RemoteAddress,
+		LocalAddress:  e.ID.LocalAddress, 	// 本地地址
+		LocalPort:     localPort,			// 本地端口
+		RemoteAddress: r.RemoteAddress,		// 远端地址
+		RemotePort:    dstAddr.Port,		// 远端端口
 	}
+
 
 	if e.state == StateInitial {
 		id.LocalAddress = r.LocalAddress
@@ -1131,8 +1146,6 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 		return err
 	}
 
-
-
 	// Remove the old registration.
 	if e.ID.LocalPort != 0 {
 		e.stack.UnregisterTransportEndpoint(e.RegisterNICID, e.effectiveNetProtos, ProtocolNumber, e.ID, e, e.bindToDevice)
@@ -1140,7 +1153,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) *tcpip.Error {
 
 	e.ID = id
 	e.route = r.Clone()
-	e.dstPort = addr.Port
+	e.dstPort = dstAddr.Port
 	e.RegisterNICID = nicID
 	e.effectiveNetProtos = netProtos
 
@@ -1358,13 +1371,16 @@ func (e *endpoint) GetLocalAddress() (tcpip.FullAddress, *tcpip.Error) {
 
 // GetRemoteAddress returns the address to which the endpoint is connected.
 func (e *endpoint) GetRemoteAddress() (tcpip.FullAddress, *tcpip.Error) {
+
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
+	// ...
 	if e.state != StateConnected {
 		return tcpip.FullAddress{}, tcpip.ErrNotConnected
 	}
 
+	// ...
 	return tcpip.FullAddress{
 		NIC:  e.RegisterNICID,
 		Addr: e.ID.RemoteAddress,
@@ -1404,7 +1420,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 // 	2. 检查 endpoint 是否已关闭
 // 	3. 检查接收缓存区是否已满
 // 	4. 将格式转换为 UDP Packet 并存入接收队列中，更新接收缓冲区大小
-// 	5. 如果本次数据接收前缓冲区未空，则需通知等待者
+// 	5. 如果本次数据接收前缓冲区为空，则需通知等待者有新数据到达
 func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pkt tcpip.PacketBuffer) {
 
 	// Get the header then trim it from the view.
@@ -1447,21 +1463,22 @@ func (e *endpoint) HandlePacket(r *stack.Route, id stack.TransportEndpointID, pk
 
 	// 构造 UDP 包
 	packet := &udpPacket{
+		// 源地址信息
 		senderAddress: tcpip.FullAddress{
-			NIC:  r.NICID(),		// 网卡 ID
-			Addr: id.RemoteAddress,	// 目标地址
-			Port: hdr.SourcePort(), // 目标端口
+			NIC:  r.NICID(),		// 收包网卡
+			Addr: id.RemoteAddress,	// 源地址
+			Port: hdr.SourcePort(), // 源端口
 		},
 	}
+
 	// 设置 Data
 	packet.data = pkt.Data
 	// 推入接收包队列
 	e.rcvList.PushBack(packet)
 	// 增加接收数据计数
 	e.rcvBufSize += pkt.Data.Size()
-	// 设置时间戳 timestamp
+	// 设置接收时间戳 timestamp
 	packet.timestamp = e.stack.NowNanoseconds()
-
 	e.rcvMu.Unlock()
 
 	// Notify any waiters that there's data to be read now.

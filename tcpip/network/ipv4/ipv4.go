@@ -497,7 +497,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		}
 	}
 
-	// 至此，收到完整的 IPv4 报文 ...
+	// 至此，收到完整的 IPv4 报文 pkt 。
 
 	// 获取传输层协议号
 	p := h.TransportProtocol()
@@ -509,8 +509,8 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 		return
 	}
 
-	// 处理其它传输层协议
 	r.Stats().IP.PacketsDelivered.Increment()
+	// 将数据包 pkt 投递给传输层 ep 来处理。
 	e.dispatcher.DeliverTransportPacket(r, p, pkt)
 }
 

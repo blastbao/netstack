@@ -232,6 +232,8 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 }
 
 func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-chan struct{}, *tcpip.Error) {
+
+
 	// MSG_MORE is unimplemented. (This also means that MSG_EOR is a no-op.)
 	if opts.More {
 		return 0, nil, tcpip.ErrInvalidOptionValue
@@ -324,7 +326,6 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	switch e.NetProto {
 	case header.IPv4ProtocolNumber:
 		err = send4(route, e.ID.LocalPort, v, e.ttl)
-
 	case header.IPv6ProtocolNumber:
 		err = send6(route, e.ID.LocalPort, v, e.ttl)
 	}
@@ -619,8 +620,7 @@ func (e *endpoint) registerWithStack(nicID tcpip.NICID, netProtos []tcpip.Networ
 }
 
 func (e *endpoint) bindLocked(addr tcpip.FullAddress) *tcpip.Error {
-	// Don't allow binding once endpoint is not in the initial state
-	// anymore.
+	// Don't allow binding once endpoint is not in the initial state anymore.
 	if e.state != stateInitial {
 		return tcpip.ErrInvalidEndpointState
 	}

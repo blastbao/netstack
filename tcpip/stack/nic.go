@@ -57,12 +57,15 @@ type NIC struct {
 
 	mcastJoins map[NetworkEndpointID]int32
 
+
 	// packetEPs is protected by mu, but the contained PacketEndpoint values are not.
 	// packetEPs 受 mu 保护，但包含的 PacketEndpoint 不受保护。
 	//
 	// packetEPs 中保存了监听本网卡上指定网络协议号的网络层端点，
 	// 当本网卡收到该网络协议号上的数据包时，会回调各个监听端点提供的 HandlePacket() 来处理。
 	packetEPs map[tcpip.NetworkProtocolNumber][]PacketEndpoint
+
+
 
 	stats NICStats
 
@@ -990,12 +993,11 @@ func handlePacket(
 	ref *referencedNetworkEndpoint, // 网络层端点的引用
 	pkt tcpip.PacketBuffer, // 数据包
 ) {
-
 	// 构造路由
 	r := makeRoute(protocol, dst, src, localLinkAddr, ref, false /* handleLocal */, false /* multicastLoop */)
 	// 设置目的 Mac 地址
 	r.RemoteLinkAddress = remotelinkAddr
-	// 根据路由将数据包交给上层业务处理，HandlePacket 在上层协议中定义，如 tcp、udp、icmp 都有自己的定义。
+	// 根据路由将数据包交给网络层 ep 处理
 	ref.ep.HandlePacket(&r, pkt)
 	// 解除路由引用
 	ref.decRef()
@@ -1080,6 +1082,7 @@ func (n *NIC) DeliverNetworkPacket(
 		return
 	}
 
+
 	// This NIC doesn't care about the packet. Find a NIC that cares about the packet and forward it to the NIC.
 	// 此网卡不关心当前数据包，找到一个关心当前数据包的网卡，并将其转发给该网卡。
 
@@ -1145,12 +1148,14 @@ func (n *NIC) DeliverNetworkPacket(
 		return
 	}
 
+
 	// If a packet socket handled the packet, don't treat it as invalid.
 	//
 	// 如果一个数据包套接字处理了这个数据包，不要将其视为无效。
 	if len(packetEPs) == 0 {
 		n.stack.stats.IP.InvalidAddressesReceived.Increment()
 	}
+
 
 }
 
@@ -1189,7 +1194,7 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 		return
 	}
 
-	// 构造传输层四元组
+	// 构造传输层四元组，然后将 pkt 投递给传输层 ep 来处理。
 	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
 	if n.stack.demux.deliverPacket(r, protocol, pkt, id) {
 		return

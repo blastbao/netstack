@@ -1335,8 +1335,7 @@ func (s *Stack) RegisterTransportEndpoint(
 	reusePort bool, // 端口重用标识
 	bindToDevice tcpip.NICID, // 绑定到设备(网卡)
 ) *tcpip.Error {
-
-	// 将 ep 注册到传输层多路复用器。
+	// 将 ep 注册到 transportDemuxer 。
 	return s.demux.registerEndpoint(netProtos, protocol, id, ep, reusePort, bindToDevice)
 
 }
@@ -1395,6 +1394,9 @@ func (s *Stack) FindTransportEndpoint(
 // RegisterRawTransportEndpoint registers the given endpoint with the stack
 // transport dispatcher. Received packets that match the provided transport
 // protocol will be delivered to the given endpoint.
+//
+// RegisterRawTransportEndpoint() 将给定的端点注册到协议栈传输层分发器中。
+// 当协议栈接收到与 netProto、transProto 协议相匹配的数据包时，会投递给这些 ep 。
 func (s *Stack) RegisterRawTransportEndpoint(
 	nicID tcpip.NICID,
 	netProto tcpip.NetworkProtocolNumber,
