@@ -454,6 +454,7 @@ func (c *testContext) injectV6Packet(payload []byte, h *header4Tuple, valid bool
 // caller intends to inject a packet with a valid or an invalid UDP header.
 // We can invalidate the header by corrupting the UDP payload length.
 func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool) {
+
 	// Allocate a buffer for data and headers.
 	buf := buffer.NewView(header.UDPMinimumSize + header.IPv4MinimumSize + len(payload))
 	payloadStart := len(buf) - len(payload)
@@ -487,12 +488,15 @@ func (c *testContext) injectV4Packet(payload []byte, h *header4Tuple, valid bool
 	u.SetChecksum(^u.CalculateChecksum(xsum))
 
 	// Inject packet.
+	c.linkEP.InjectInbound(
+		ipv4.ProtocolNumber,
+		tcpip.PacketBuffer{
+			Data:            buf.ToVectorisedView(),
+			NetworkHeader:   buffer.View(ip),
+			TransportHeader: buffer.View(u),
+		},
+	)
 
-	c.linkEP.InjectInbound(ipv4.ProtocolNumber, tcpip.PacketBuffer{
-		Data:            buf.ToVectorisedView(),
-		NetworkHeader:   buffer.View(ip),
-		TransportHeader: buffer.View(u),
-	})
 }
 
 func newPayload() []byte {
@@ -1544,9 +1548,7 @@ func TestV6UnknownDestination(t *testing.T) {
 				}
 
 				hdr := header.IPv6(pkt)
-				checker.IPv6(t, hdr, checker.ICMPv6(
-					checker.ICMPv6Type(header.ICMPv6DstUnreachable),
-					checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
+				checker.IPv6(t, hdr, checker.ICMPv6(checker.ICMPv6Type(header.ICMPv6DstUnreachable), checker.ICMPv6Code(header.ICMPv6PortUnreachable)))
 
 				icmpPkt := header.ICMPv6(hdr.Payload())
 				payloadIPHeader := header.IPv6(icmpPkt.Payload())

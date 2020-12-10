@@ -606,7 +606,6 @@ func New(opts Options) *Stack {
 	// 如果存在的话，设置原始端点的工厂。
 	s.rawFactory = opts.RawFactory
 
-
 	// Create the global transport demuxer.
 	// 创建全局传输解调器。
 	s.demux = newTransportDemuxer(s)
@@ -1095,7 +1094,13 @@ func (s *Stack) getRefEP(nic *NIC, localAddr tcpip.Address, netProto tcpip.Netwo
 // FindRoute creates a route to the given destination address,
 // leaving through the given nic and local address (if provided).
 //
-// FindRoute 创建一条通往给定目标地址的路由，通过给定的 nic 和本地地址（如果提供）来转发。
+// FindRoute() 创建一条通往给定目标地址的路由，通过给定的 nic 和本地地址（如果提供）来发包。
+//
+// [重要] FindRoute() 它根据网卡 nic、本地和远端地址、网络层协议、是否广播等参数，
+// 从注册到网卡 nic 上的网络层 eps 选择合适的端点的 ref ，封装成 Route 对象，以支持网络层数据包的发送。
+//
+//
+//
 func (s *Stack) FindRoute(
 	id tcpip.NICID, 						// 网卡 ID
 	localAddr, remoteAddr tcpip.Address, 	// 本地/远端 IP 地址

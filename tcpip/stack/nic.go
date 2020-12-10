@@ -26,7 +26,51 @@ import (
 
 // NIC represents a "network interface card" to which the networking stack is attached.
 //
-// NIC 代表网络协议栈所连接的网卡。
+// NIC 代表网络协议栈所关联的网卡。
+//
+//
+// ***** 收包方向 *****
+//
+// 在收包方向，NIC 是连接物理层、网络层、传输层的桥梁。
+//
+// NIC 的主要功能是从数据链路层接收数据包，然后通过 NIC.DeliverNetworkPacket() 完成网络层数据包的分发。
+// 其内部先取出关心当前数据包的网络层 ep ，然后通过 ep.HandlePacket 投递给它。
+//
+// 所有网络层 ep 的注册，都是间接通过协议栈 stack 注册到 NIC 上的，因此当网卡 NIC 收到链路层数据包时，
+// 能够知道本 NIC 上哪些网络层 ep 关心来包，从而投递给它。
+//
+//
+// 传输层协议在 Connect/Disconnect/Bind/Listen 时，会调用 stack.RegisterTransportEndpoint() 将
+// 对应的传输层端点注册到 stack.demux 中。
+//
+// 网络层端点 ep 通过 ep.HandlePacket(r, pkt) 收到网络包之后，会调用 ep.dispatcher.DeliverTransportPacket 将数据包
+// 投递给传输层端点，看目前实现中，仅 NIC 实现了 DeliverTransportPacket 函数，其内部是通过调用 nic.stack.demux.deliverPacket() 来
+// 完成传输层包的分发，而 nic.stack.demux 中保存的传输层端点，正是通过前述 stack.RegisterTransportEndpoint() 注册的。
+//
+// 因此，
+// 网络层端点是通过协议栈 stack 间接注册在某个网卡对象上，通过网卡 NIC 接收物理层的来包。
+// 传输层端点是直接注册到协议栈 stack 的(demux成员)，当网络层端点需要向传输层投递数据包时，通过调用协议栈 demux 成员函数来完成。
+//
+// ***** 发包方向 *****
+//
+// 在发包方向，Route 是连接传输层和网络层的桥梁。
+//
+// 传输层通过 Route.WritePacket 或 Route.WritePackets 完成网络层数据包的发送，而 Route 是通过内部网络层端点引用 ep_ref.WritePacket() 实现发包。
+//
+// 传输层通过 stack.FindRoute() 获取 Route 对象，而网络层端点 ref 都是注册在某个 NIC 上的，所以 FindRoute() 内部会先定位到目标 NIC ，然后
+// 通过 nic.findEndpoint() 获取到该网卡上关联的网络层端点 ref 。
+//
+// ***** 总结 *****
+//
+// 网络层端点是注册到 NIC 上的，所以无论是收包还是发包，都能通过 NIC 找到所需的 netEp 。
+// 传输层端点是注册到协议栈上的，当收包时，网络层端点 netEp 需要通过协议栈的 stack.demux 才能将数据包投递给相应的 transEp ；
+// 当发包时，传输层端点 transEp 需要先确认网卡 nic ，然后通过 nic.findEndpoint() 选出用于发包的 netEp ，然后进行发包。
+//
+//
+// ***** 遗留问题 *****
+// 为什么传输层需要知道网卡信息？
+//
+//
 type NIC struct {
 	// 协议栈
 	stack *Stack
@@ -64,8 +108,6 @@ type NIC struct {
 	// packetEPs 中保存了监听本网卡上指定网络协议号的网络层端点，
 	// 当本网卡收到该网络协议号上的数据包时，会回调各个监听端点提供的 HandlePacket() 来处理。
 	packetEPs map[tcpip.NetworkProtocolNumber][]PacketEndpoint
-
-
 
 	stats NICStats
 
@@ -1082,7 +1124,6 @@ func (n *NIC) DeliverNetworkPacket(
 		return
 	}
 
-
 	// This NIC doesn't care about the packet. Find a NIC that cares about the packet and forward it to the NIC.
 	// 此网卡不关心当前数据包，找到一个关心当前数据包的网卡，并将其转发给该网卡。
 
@@ -1178,7 +1219,6 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	// We do not inspect the payload to ensure it's validly formed.
 	//
 	// 原始套接字数据包仅根据传输协议号进行传输，不会检查其载荷。
-
 	n.stack.demux.deliverRawPacket(r, protocol, pkt)
 
 	// 检查包大小
@@ -1195,7 +1235,12 @@ func (n *NIC) DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolN
 	}
 
 	// 构造传输层四元组，然后将 pkt 投递给传输层 ep 来处理。
-	id := TransportEndpointID{dstPort, r.LocalAddress, srcPort, r.RemoteAddress}
+	id := TransportEndpointID{
+		dstPort,
+		r.LocalAddress,
+		srcPort,
+		r.RemoteAddress,
+	}
 	if n.stack.demux.deliverPacket(r, protocol, pkt, id) {
 		return
 	}

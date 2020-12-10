@@ -59,7 +59,13 @@ type endpoint struct {
 
 // NewEndpoint creates a new ipv4 endpoint.
 // NewEndpoint 创建一个新的 ipv4 端点。
-func (p *protocol) NewEndpoint(nicID tcpip.NICID, addrWithPrefix tcpip.AddressWithPrefix, linkAddrCache stack.LinkAddressCache, dispatcher stack.TransportDispatcher, linkEP stack.LinkEndpoint) (stack.NetworkEndpoint, *tcpip.Error) {
+func (p *protocol) NewEndpoint(
+	nicID tcpip.NICID,
+	addrWithPrefix tcpip.AddressWithPrefix,
+	linkAddrCache stack.LinkAddressCache,
+	dispatcher stack.TransportDispatcher,
+	linkEP stack.LinkEndpoint,
+) (stack.NetworkEndpoint, *tcpip.Error) {
 
 	e := &endpoint{
 		nicID:         nicID,
@@ -510,6 +516,7 @@ func (e *endpoint) HandlePacket(r *stack.Route, pkt tcpip.PacketBuffer) {
 	}
 
 	r.Stats().IP.PacketsDelivered.Increment()
+
 	// 将数据包 pkt 投递给传输层 ep 来处理。
 	e.dispatcher.DeliverTransportPacket(r, p, pkt)
 }

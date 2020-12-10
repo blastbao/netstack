@@ -65,6 +65,8 @@ const (
 	ControlUnknown								// 未知
 )
 
+
+
 // TransportEndpoint is the interface that needs to be implemented by transport
 // protocol (e.g., tcp, udp) endpoints that can handle packets.
 type TransportEndpoint interface {
@@ -100,6 +102,8 @@ type TransportEndpoint interface {
 	// yet, even if it might later.
 	Wait()
 }
+
+
 
 // RawTransportEndpoint is the interface that needs to be implemented by raw
 // transport protocol endpoints. RawTransportEndpoints receive the entire
@@ -187,6 +191,8 @@ type TransportProtocol interface {
 // TransportDispatcher contains the methods used by the network stack to deliver
 // packets to the appropriate transport endpoint after it has been handled by
 // the network layer.
+//
+// TransportDispatcher 包含协议栈在处理完网络层数据包后，将数据包传递到合适的传输层端点的方法。
 type TransportDispatcher interface {
 
 	// DeliverTransportPacket delivers packets to the appropriate transport protocol endpoint.
@@ -199,7 +205,6 @@ type TransportDispatcher interface {
 	// 在调用 DeliverTransportPacket() 之前必须设置 pkt.NetworkHeader 。
 	// DeliverTransportPacket() 会获得 pkt.NetworkHeader 的所有权。
 	DeliverTransportPacket(r *Route, protocol tcpip.TransportProtocolNumber, pkt tcpip.PacketBuffer)
-
 
 	// DeliverTransportControlPacket delivers control packets to the appropriate transport protocol endpoint.
 	//

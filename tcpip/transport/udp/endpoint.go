@@ -341,7 +341,6 @@ func (e *endpoint) connectRoute(
 ) ( stack.Route, tcpip.NICID, *tcpip.Error ) {
 
 
-
 	localAddr := e.ID.LocalAddress
 
 	// 源地址不能是是多播或者组播地址，如果是则置空
@@ -362,11 +361,13 @@ func (e *endpoint) connectRoute(
 		if localAddr == "" && nicID == 0 {
 			localAddr = e.multicastAddr
 		}
-
 	}
 
 	// Find a route to the desired destination.
 	// 创建一条通往给定目标地址的路由。
+	//
+	// Route 是连接传输层和网络层的桥梁（发包），传输层根据参数获取合适的 Route 对象（包含网络层 ep 的 ref)，
+	// 通过 Route.WritePacket 或 Route.WritePackets 完成网络层数据包的发送。
 	r, err := e.stack.FindRoute(nicID, localAddr, dstAddr.Addr, netProto, e.multicastLoop)
 	if err != nil {
 		return stack.Route{}, 0, err
@@ -399,12 +400,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, <-c
 	}
 	return n, ch, err
 }
-
-
-
-
-
-
 
 //
 //
@@ -1210,8 +1205,7 @@ func (*endpoint) Accept() (tcpip.Endpoint, *waiter.Queue, *tcpip.Error) {
 }
 
 
-//
-//
+// 注册到协议栈，参数包括: 网卡ID，传输层协议号，传输层四元组。
 //
 //
 //

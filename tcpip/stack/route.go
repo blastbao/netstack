@@ -34,6 +34,10 @@ import (
 //  本地网络层端点
 //  回环处理标识
 //
+// 在发包方向，Route 是连接传输层和网络层的桥梁，传输层根据发送参数获取合适的 Route 对象，
+// 通过 Route.WritePacket 或 Route.WritePackets 完成网络层数据包的发送，Route 内部
+// 会通过网络层 ep ref 完成发包。
+//
 type Route struct {
 
 	// RemoteAddress is the final destination of the route.
@@ -239,7 +243,6 @@ func (r *Route) WritePacket(gso *GSO, params NetworkHeaderParams, pkt tcpip.Pack
 		// 更新发送字节数
 		r.ref.nic.stats.Tx.Bytes.IncrementBy(uint64(pkt.Header.UsedLength() + pkt.Data.Size()))
 	}
-
 
 	return err
 }

@@ -233,7 +233,6 @@ func buildContext(t *testing.T, packetCollectorErrors []*tcpip.Error, mtu uint32
 		NetworkProtocols: []stack.NetworkProtocol{ipv4.NewProtocol()},
 	})
 
-
 	// 创建链路层 ep
 	ep := newErrorChannel(100 /* Enough for all tests. */, mtu, "", packetCollectorErrors)
 

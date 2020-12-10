@@ -192,6 +192,12 @@ func (t *testObject) WriteRawPacket(_ buffer.VectorisedView) *tcpip.Error {
 	return tcpip.ErrNotSupported
 }
 
+
+//
+//
+//
+//
+//
 func buildIPv4Route(local, remote tcpip.Address) (stack.Route, *tcpip.Error) {
 
 	// 创建协议栈
@@ -304,12 +310,26 @@ func TestIPv4Send(t *testing.T) {
 
 func TestIPv4Receive(t *testing.T) {
 	o := testObject{t: t, v4: true}
-	proto := ipv4.NewProtocol()
-	ep, err := proto.NewEndpoint(1, tcpip.AddressWithPrefix{localIpv4Addr, localIpv4PrefixLen}, nil, &o, nil)
+
+
+	// 创建 IPv4 网络层端点 ep
+	ep, err := ipv4.NewProtocol().NewEndpoint(
+		1,
+		tcpip.AddressWithPrefix{
+			localIpv4Addr,
+			localIpv4PrefixLen,
+		},
+		nil,
+		&o,
+		nil,
+	)
+
 	if err != nil {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
+
+	// 构造 IPv4 数据包
 	totalLen := header.IPv4MinimumSize + 30
 	view := buffer.NewView(totalLen)
 	ip := header.IPv4(view)
@@ -333,13 +353,16 @@ func TestIPv4Receive(t *testing.T) {
 	o.dstAddr = localIpv4Addr
 	o.contents = view[header.IPv4MinimumSize:totalLen]
 
+	//
 	r, err := buildIPv4Route(localIpv4Addr, remoteIpv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
+
 	ep.HandlePacket(&r, tcpip.PacketBuffer{
 		Data: view.ToVectorisedView(),
 	})
+
 	if o.dataCalls != 1 {
 		t.Fatalf("Bad number of data calls: got %x, want 1", o.dataCalls)
 	}
